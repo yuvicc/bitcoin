@@ -599,7 +599,15 @@ public:
     }
 };
 
-class BlockTreeEntry : View<btck_BlockTreeEntry>
+struct BlockHashDeleter {
+    void operator()(btck_BlockHash* ptr) const
+    {
+        btck_block_hash_destroy(ptr);
+    }
+};
+
+
+class BlockTreeEntry : public View<btck_BlockTreeEntry>
 {
 public:
     BlockTreeEntry(const btck_BlockTreeEntry* entry)
@@ -614,7 +622,18 @@ public:
         return entry;
     }
 
+    int32_t GetHeight() const
+    {
+        return btck_block_tree_entry_get_height(get());
+    }
+
+    std::unique_ptr<btck_BlockHash, BlockHashDeleter> GetHash() const
+    {
+        return std::unique_ptr<btck_BlockHash, BlockHashDeleter>(btck_block_tree_entry_get_block_hash(get()));
+    }
+
     friend class ChainMan;
+    friend class Chain;
 };
 
 template <typename T>
@@ -786,6 +805,28 @@ public:
     {
         return btck_chain_get_height(get());
     }
+
+    BlockTreeEntry Genesis() const
+    {
+        return btck_chain_get_genesis(get());
+    }
+
+    BlockTreeEntry GetByHeight(int height) const
+    {
+        auto index{btck_chain_get_by_height(get(), height)};
+        if (!index) throw std::runtime_error("No entry in the chain at the provided height");
+        return index;
+    }
+
+    bool Contains(BlockTreeEntry& entry) const
+    {
+        return btck_chain_contains(get(), entry.get());
+    }
+
+    auto Entries() const
+    {
+        return Range<ChainView, &ChainView::Height, &ChainView::GetByHeight>{*this};
+    }
 };
 
 template <typename Derived>
@@ -922,6 +963,11 @@ public:
     ChainView GetChain() const
     {
         return ChainView{btck_chainstate_manager_get_active_chain(get())};
+    }
+
+    BlockTreeEntry GetBlockTreeEntry(btck_BlockHash* block_hash) const
+    {
+        return btck_chainstate_manager_get_block_tree_entry_by_hash(get(), block_hash);
     }
 
     std::optional<Block> ReadBlock(BlockTreeEntry& entry) const
