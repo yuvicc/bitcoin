@@ -150,3 +150,17 @@ install(TARGETS bitcoinkernel
 )
 
 install(FILES bitcoinkernel.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT Kernel)
+
+add_executable(kernel-reindexer
+  reindexer.cpp
+)
+
+target_link_libraries(kernel-reindexer
+  PRIVATE
+    core_interface
+    bitcoinkernel
+)
+
+set_target_properties(kernel-reindexer PROPERTIES
+  SKIP_BUILD_RPATH OFF
+)
