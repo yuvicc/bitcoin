@@ -10,6 +10,7 @@ add_executable(bench_bitcoin
   addrman.cpp
   base58.cpp
   bech32.cpp
+  bench_kernel.cpp
   bip324_ecdh.cpp
   block_assemble.cpp
   ccoins_caching.cpp
@@ -59,6 +60,7 @@ target_raw_data_sources(bench_bitcoin NAMESPACE benchmark::data
 )
 
 target_link_libraries(bench_bitcoin
+  bitcoinkernel
   core_interface
   test_util
   bitcoin_node
