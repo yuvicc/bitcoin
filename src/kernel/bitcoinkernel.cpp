@@ -252,7 +252,6 @@ public:
                 m_validation_interface = std::make_unique<KernelValidationInterface>(*options->m_validation_interface);
                 m_signals->RegisterValidationInterface(m_validation_interface.get());
             }
-
         }
 
         if (!m_chainparams) {
@@ -731,9 +730,21 @@ kernel_BlockValidationResult kernel_get_block_validation_result_from_block_valid
     assert(false);
 }
 
-bool kernel_check_block(const kernel_Block *block, kernel_BlockValidationState *state, const kernel_ConsensusParams *consensus_params, bool check_pow, bool check_merkle_root) {
-    // todo: define consensus params struct
-    return true;
+bool kernel_check_block(const kernel_ChainParameters* chain_params_, kernel_BlockPointer* block_ptr, kernel_BlockValidationState* state_, bool check_pow, bool check_merkle_root)
+{
+    auto chain_params{cast_const_chain_params(chain_params_)};
+    auto block{cast_const_cblock(block_ptr)};
+    auto state{reinterpret_cast<BlockValidationState*>(state_)};
+    try {
+        if (!CheckBlock(*block, *state, chain_params->GetConsensus(), check_pow, check_merkle_root)) {
+            LogDebug(BCLog::KERNEL, "Check Block validation failed: %s", state->ToString());
+            return false;
+        }
+        return true;
+    } catch (const std::exception& e) {
+        LogError("CheckBlock Validation error: %s", e.what());
+        return false;
+    }
 }
 
 kernel_ChainstateManagerOptions* kernel_chainstate_manager_options_create(const kernel_Context* context_, const char* data_dir, size_t data_dir_len, const char* blocks_dir, size_t blocks_dir_len)
