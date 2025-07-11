@@ -1003,6 +1003,18 @@ BITCOINKERNEL_API kernel_BlockValidationResult kernel_get_block_validation_resul
     const kernel_BlockValidationState* block_validation_state
 ) BITCOINKERNEL_ARG_NONNULL(1);
 
+/**
+ * This is context-free checks
+ * Returns true if validation passes, false if validation fails
+ */
+BITCOINKERNEL_API bool kernel_check_block(
+    const kernel_Block* block,
+    kernel_BlockValidationState* state,
+    const kernel_ChainParameters* consensus_params,
+    bool check_pow,
+    bool check_merkle_root
+)  BITCOINKERNEL_ARG_NONNULL(1, 2, 3);
+
 ///@}
 
 /** @name BlockIndex

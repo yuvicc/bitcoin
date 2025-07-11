@@ -731,6 +731,11 @@ kernel_BlockValidationResult kernel_get_block_validation_result_from_block_valid
     assert(false);
 }
 
+bool kernel_check_block(const kernel_Block *block, kernel_BlockValidationState *state, const kernel_ConsensusParams *consensus_params, bool check_pow, bool check_merkle_root) {
+    // todo: define consensus params struct
+    return true;
+}
+
 kernel_ChainstateManagerOptions* kernel_chainstate_manager_options_create(const kernel_Context* context_, const char* data_dir, size_t data_dir_len, const char* blocks_dir, size_t blocks_dir_len)
 {
     try {
