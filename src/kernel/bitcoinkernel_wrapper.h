@@ -559,13 +559,22 @@ public:
 class ChainMan
 {
 private:
-    kernel_ChainstateManager* m_chainman;
-    const Context& m_context;
+
+    struct Deleter {
+        std::shared_ptr<Context> ctx;
+        void operator()(kernel_ChainstateManager* ptr) const noexcept
+        {
+            kernel_chainstate_manager_destroy(ptr, ctx->m_context.get());
+        }
+    };
+    
+    std::shared_ptr<Context> m_ctx;
+    std::unique_ptr<kernel_ChainstateManager, Deleter> m_chainman;
 
 public:
-    ChainMan(const Context& context, const ChainstateManagerOptions& chainman_opts) noexcept
-        : m_chainman{kernel_chainstate_manager_create(context.m_context.get(), chainman_opts.m_options.get())},
-          m_context{context}
+    ChainMan(std::shared_ptr<Context> ctx, const ChainstateManagerOptions& chainman_opts)
+        : m_ctx{std::move(ctx)}, m_chainman{kernel_chainstate_manager_create(m_ctx->m_context.get(), 
+            chainman_opts.m_options.get()), Deleter{m_ctx}}
     {
     }
 
@@ -586,61 +595,61 @@ public:
             c_paths_lens.push_back(path.length());
         }
 
-        return kernel_chainstate_manager_import_blocks(m_context.m_context.get(), m_chainman, c_paths.data(), c_paths_lens.data(), c_paths.size());
+        return kernel_chainstate_manager_import_blocks(m_ctx->m_context.get(), m_chainman.get(), c_paths.data(), c_paths_lens.data(), c_paths.size());
     }
 
     bool ProcessBlock(const Block& block, bool* new_block) const noexcept
     {
-        return kernel_chainstate_manager_process_block(m_context.m_context.get(), m_chainman, block.m_block.get(), new_block);
+        return kernel_chainstate_manager_process_block(m_ctx->m_context.get(), m_chainman.get(), block.m_block.get(), new_block);
     }
 
     BlockIndex GetBlockIndexFromTip() const noexcept
     {
-        return kernel_block_index_get_tip(m_context.m_context.get(), m_chainman);
+        return kernel_block_index_get_tip(m_ctx->m_context.get(), m_chainman.get());
     }
 
     BlockIndex GetBlockIndexFromGenesis() const noexcept
     {
-        return kernel_block_index_get_genesis(m_context.m_context.get(), m_chainman);
+        return kernel_block_index_get_genesis(m_ctx->m_context.get(), m_chainman.get());
     }
 
     BlockIndex GetBlockIndexByHash(kernel_BlockHash* block_hash) const noexcept
     {
-        return kernel_block_index_get_by_hash(m_context.m_context.get(), m_chainman, block_hash);
+        return kernel_block_index_get_by_hash(m_ctx->m_context.get(), m_chainman.get(), block_hash);
     }
 
     std::optional<BlockIndex> GetBlockIndexByHeight(int height) const noexcept
     {
-        auto index{kernel_block_index_get_by_height(m_context.m_context.get(), m_chainman, height)};
+        auto index{kernel_block_index_get_by_height(m_ctx->m_context.get(), m_chainman.get(), height)};
         if (!index) return std::nullopt;
         return index;
     }
 
     std::optional<BlockIndex> GetNextBlockIndex(BlockIndex& block_index) const noexcept
     {
-        auto index{kernel_block_index_get_next(m_context.m_context.get(), m_chainman, block_index.m_block_index.get())};
+        auto index{kernel_block_index_get_next(m_ctx->m_context.get(), m_chainman.get(), block_index.m_block_index.get())};
         if (!index) return std::nullopt;
         return index;
     }
 
     std::optional<Block> ReadBlock(BlockIndex& block_index) const noexcept
     {
-        auto block{kernel_block_read(m_context.m_context.get(), m_chainman, block_index.m_block_index.get())};
+        auto block{kernel_block_read(m_ctx->m_context.get(), m_chainman.get(), block_index.m_block_index.get())};
         if (!block) return std::nullopt;
         return block;
     }
 
     std::optional<BlockUndo> ReadBlockUndo(const BlockIndex& block_index) const noexcept
     {
-        auto undo{kernel_block_undo_read(m_context.m_context.get(), m_chainman, block_index.m_block_index.get())};
+        auto undo{kernel_block_undo_read(m_ctx->m_context.get(), m_chainman.get(), block_index.m_block_index.get())};
         if (!undo) return std::nullopt;
         return undo;
     }
 
-    ~ChainMan()
-    {
-        kernel_chainstate_manager_destroy(m_chainman, m_context.m_context.get());
-    }
+    // ~ChainMan()
+    // {
+    //     kernel_chainstate_manager_destroy(m_chainman, m_context.m_context.get());
+    // }
 };
 
 #endif // BITCOIN_KERNEL_BITCOINKERNEL_WRAPPER_H

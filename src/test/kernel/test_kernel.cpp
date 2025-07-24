@@ -374,9 +374,9 @@ void chainman_test()
     auto test_directory{TestDirectory{"chainman_test_bitcoin_kernel"}};
 
     { // test with default context
-        Context context{};
+        auto context = std::make_shared<Context>();
         assert(context);
-        ChainstateManagerOptions chainman_opts{context, test_directory.m_directory.string(), (test_directory.m_directory / "blocks").string()};
+        ChainstateManagerOptions chainman_opts{*context, test_directory.m_directory.string(), (test_directory.m_directory / "blocks").string()};
         assert(chainman_opts);
         ChainMan chainman{context, chainman_opts};
         assert(chainman);
@@ -384,18 +384,18 @@ void chainman_test()
 
     { // test with default context options
         ContextOptions options{};
-        Context context{options};
+        auto context = std::make_shared<Context>();
         assert(context);
-        ChainstateManagerOptions chainman_opts{context, test_directory.m_directory.string(), (test_directory.m_directory / "blocks").string()};
+        ChainstateManagerOptions chainman_opts{*context, test_directory.m_directory.string(), (test_directory.m_directory / "blocks").string()};
         assert(chainman_opts);
         ChainMan chainman{context, chainman_opts};
         assert(chainman);
     }
 
     TestKernelNotifications notifications{};
-    auto context{create_context(notifications, kernel_ChainType::kernel_CHAIN_TYPE_MAINNET)};
+    auto context = std::make_shared<Context>(create_context(notifications, kernel_ChainType::kernel_CHAIN_TYPE_MAINNET));
 
-    ChainstateManagerOptions chainman_opts{context, test_directory.m_directory.string(), (test_directory.m_directory / "blocks").string()};
+    ChainstateManagerOptions chainman_opts{*context, test_directory.m_directory.string(), (test_directory.m_directory / "blocks").string()};
     assert(chainman_opts);
     chainman_opts.SetWorkerThreads(4);
     assert(chainman_opts.SetWipeDbs(/*wipe_block_tree=*/false, /*wipe_chainstate=*/false));
@@ -409,9 +409,9 @@ std::unique_ptr<ChainMan> create_chainman(TestDirectory& test_directory,
                                           bool wipe_chainstate,
                                           bool block_tree_db_in_memory,
                                           bool chainstate_db_in_memory,
-                                          Context& context)
+                                          std::shared_ptr<Context> context)
 {
-    ChainstateManagerOptions chainman_opts{context, test_directory.m_directory.string(), (test_directory.m_directory / "blocks").string()};
+    ChainstateManagerOptions chainman_opts{*context, test_directory.m_directory.string(), (test_directory.m_directory / "blocks").string()};
     assert(chainman_opts);
 
     if (reindex) {
@@ -437,7 +437,7 @@ void chainman_in_memory_test()
     auto in_memory_test_directory{TestDirectory{"in-memory_test_bitcoin_kernel"}};
 
     TestKernelNotifications notifications{};
-    auto context{create_context(notifications, kernel_ChainType::kernel_CHAIN_TYPE_REGTEST)};
+    auto context = std::make_shared<Context>(create_context(notifications, kernel_ChainType::kernel_CHAIN_TYPE_REGTEST));
     auto chainman{create_chainman(in_memory_test_directory, false, false, true, true, context)};
 
     for (auto& raw_block : REGTEST_BLOCK_DATA) {
@@ -457,7 +457,7 @@ void chainman_mainnet_validation_test(TestDirectory& test_directory)
     TestKernelNotifications notifications{};
     TestValidationInterface validation_interface{};
 
-    auto context{create_context(notifications, kernel_ChainType::kernel_CHAIN_TYPE_MAINNET, &validation_interface)};
+    auto context = std::make_shared<Context>(create_context(notifications, kernel_ChainType::kernel_CHAIN_TYPE_MAINNET, &validation_interface));
 
     auto chainman{create_chainman(test_directory, false, false, false, false, context)};
 
@@ -506,7 +506,7 @@ void chainman_regtest_validation_test()
     auto test_directory{TestDirectory{"regtest_test_bitcoin_kernel"}};
 
     TestKernelNotifications notifications{};
-    auto context{create_context(notifications, kernel_ChainType::kernel_CHAIN_TYPE_REGTEST)};
+    auto context = std::make_shared<Context>(create_context(notifications, kernel_ChainType::kernel_CHAIN_TYPE_REGTEST));
 
     // Validate 206 regtest blocks in total.
     // Stop halfway to check that it is possible to continue validating starting
@@ -565,7 +565,7 @@ void chainman_regtest_validation_test()
 void chainman_reindex_test(TestDirectory& test_directory)
 {
     TestKernelNotifications notifications{};
-    auto context{create_context(notifications, kernel_ChainType::kernel_CHAIN_TYPE_MAINNET)};
+    auto context = std::make_shared<Context>(create_context(notifications, kernel_ChainType::kernel_CHAIN_TYPE_MAINNET));
     auto chainman{create_chainman(test_directory, true, false, false, false, context)};
 
     std::vector<std::string> import_files;
@@ -603,7 +603,7 @@ void chainman_reindex_test(TestDirectory& test_directory)
 void chainman_reindex_chainstate_test(TestDirectory& test_directory)
 {
     TestKernelNotifications notifications{};
-    auto context{create_context(notifications, kernel_ChainType::kernel_CHAIN_TYPE_MAINNET)};
+    auto context = std::make_shared<Context>(create_context(notifications, kernel_ChainType::kernel_CHAIN_TYPE_MAINNET));
     auto chainman{create_chainman(test_directory, false, true, false, false, context)};
 
     std::vector<std::string> import_files;

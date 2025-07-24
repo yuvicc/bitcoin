@@ -4,6 +4,7 @@
 #include <charconv>
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -181,10 +182,11 @@ int main(int argc, char* argv[])
     TestValidationInterface validation_interface{};
     options.SetValidationInterface(validation_interface);
 
-    Context context{options};
+    // Context context{options};
+    auto context = std::make_shared<Context>(options);
     assert(context);
 
-    ChainstateManagerOptions chainman_opts{context, abs_datadir.string(), (abs_datadir / "blocks").string()};
+    ChainstateManagerOptions chainman_opts{*context, abs_datadir.string(), (abs_datadir / "blocks").string()};
     assert(chainman_opts);
     chainman_opts.SetWorkerThreads(4);
 
