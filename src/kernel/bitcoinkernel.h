@@ -654,6 +654,15 @@ BITCOINKERNEL_API btck_TransactionOutput* btck_transaction_output_copy(
 BITCOINKERNEL_API btck_TransactionInput* btck_transaction_input_copy(
     const btck_TransactionInput* transaction_input) BITCOINKERNEL_ARG_NONNULL(1);
 
+typedef struct {
+    char txid[65];   // 64 hex chars + null terminator
+    uint32_t n;      // vout index
+} btck_OutPoint;
+
+BITCOINKERNEL_API int btck_transaction_input_get_prevout(
+    const btck_TransactionInput* input,
+    btck_OutPoint* out) BITCOINKERNEL_ARG_NONNULL(1);
+
 /**
  * Destroy the transaction output.
  */

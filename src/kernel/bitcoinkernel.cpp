@@ -558,6 +558,31 @@ btck_TransactionOutput* btck_transaction_output_copy(const btck_TransactionOutpu
     return btck_TransactionOutput::copy(output);
 }
 
+int btck_transaction_input_get_prevout(
+    const btck_TransactionInput* input,
+    btck_OutPoint* out)
+{
+    if (!input || !out) {
+        return -1;
+    }
+
+    const auto& prevout = btck_TransactionInput::get(input).prevout;
+
+    // Get txid as hex string
+    std::string hex = prevout.hash.GetHex();
+
+    if (hex.size() >= sizeof(out->txid)) {
+        return -1; // should not happen (hash hex is 64 chars)
+    }
+
+    strncpy(out->txid, hex.c_str(), sizeof(out->txid));
+    out->txid[sizeof(out->txid) - 1] = '\0';
+
+    out->n = prevout.n;
+
+    return 0;
+}
+
 // btck_TransactionInput* btck_transaction_input_create(const btck_ScriptPubkey* script_pubkey, int64_t amount)
 // {
 //     const CAmount& value{amount};
