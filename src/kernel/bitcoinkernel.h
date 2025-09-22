@@ -119,6 +119,11 @@ typedef struct btck_ScriptPubkey btck_ScriptPubkey;
 typedef struct btck_TransactionOutput btck_TransactionOutput;
 
 /**
+ * Opaque data structure for holding a transaction input.
+ */
+typedef struct btck_TransactionInput btck_TransactionInput;
+
+/**
  * Opaque data structure for holding a logging connection.
  *
  * The logging connection can be used to manually stop logging.
@@ -504,6 +509,18 @@ BITCOINKERNEL_API size_t BITCOINKERNEL_WARN_UNUSED_RESULT btck_transaction_count
     const btck_Transaction* transaction) BITCOINKERNEL_ARG_NONNULL(1);
 
 /**
+ * @brief Get the transaction inputs at the provided index. The returned
+ * transaction input is not owned and depends on the lifetime of the
+ * transaction.
+ *
+ * @param[in] transaction  Non-null.
+ * @param[in] input_index The index of the transaction to be retrieved.
+ * @return                 The transaction input
+ */
+BITCOINKERNEL_API const btck_TransactionInput* BITCOINKERNEL_WARN_UNUSED_RESULT btck_transaction_get_input_at(
+    const btck_Transaction* transaction, size_t input_index) BITCOINKERNEL_ARG_NONNULL(1);
+
+/**
  * Destroy the transaction.
  */
 BITCOINKERNEL_API void btck_transaction_destroy(btck_Transaction* transaction);
@@ -629,9 +646,32 @@ BITCOINKERNEL_API btck_TransactionOutput* btck_transaction_output_copy(
     const btck_TransactionOutput* transaction_output) BITCOINKERNEL_ARG_NONNULL(1);
 
 /**
+ *  @brief Copy a transaction input.
+ *
+ *  @param[in] transaction_input Non-null.
+ *  @return                       The copied transaction input.
+ */
+BITCOINKERNEL_API btck_TransactionInput* btck_transaction_input_copy(
+    const btck_TransactionInput* transaction_input) BITCOINKERNEL_ARG_NONNULL(1);
+
+typedef struct {
+    char txid[65];   // 64 hex chars + null terminator
+    uint32_t n;      // vout index
+} btck_OutPoint;
+
+BITCOINKERNEL_API int btck_transaction_input_get_prevout(
+    const btck_TransactionInput* input,
+    btck_OutPoint* out) BITCOINKERNEL_ARG_NONNULL(1);
+
+/**
  * Destroy the transaction output.
  */
 BITCOINKERNEL_API void btck_transaction_output_destroy(btck_TransactionOutput* transaction_output);
+
+/**
+ * Destroy the transaction input.
+ */
+BITCOINKERNEL_API void btck_transaction_input_destroy(btck_TransactionInput* transaction_input);
 
 ///@}
 

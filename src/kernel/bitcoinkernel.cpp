@@ -459,6 +459,7 @@ struct ChainMan {
 
 struct btck_Transaction : Handle<btck_Transaction, std::shared_ptr<const CTransaction>> {};
 struct btck_TransactionOutput : Handle<btck_TransactionOutput, CTxOut> {};
+struct btck_TransactionInput : Handle<btck_TransactionInput, CTxIn> {};
 struct btck_ScriptPubkey : Handle<btck_ScriptPubkey, CScript> {};
 struct btck_LoggingConnection : Handle<btck_LoggingConnection, LoggingConnection> {};
 struct btck_ContextOptions : Handle<btck_ContextOptions, ContextOptions> {};
@@ -495,6 +496,12 @@ const btck_TransactionOutput* btck_transaction_get_output_at(const btck_Transact
 size_t btck_transaction_count_inputs(const btck_Transaction* transaction)
 {
     return btck_Transaction::get(transaction)->vin.size();
+}
+
+const btck_TransactionInput* btck_transaction_get_input_at(const btck_Transaction* transaction, size_t input_index)
+{
+    assert(input_index < btck_Transaction::get(transaction)->vin.size());
+    return btck_TransactionInput::ref(&btck_Transaction::get(transaction)->vin[input_index]);
 }
 
 btck_Transaction* btck_transaction_copy(const btck_Transaction* transaction)
@@ -551,6 +558,36 @@ btck_TransactionOutput* btck_transaction_output_copy(const btck_TransactionOutpu
     return btck_TransactionOutput::copy(output);
 }
 
+int btck_transaction_input_get_prevout(
+    const btck_TransactionInput* input,
+    btck_OutPoint* out)
+{
+    if (!input || !out) {
+        return -1;
+    }
+
+    const auto& prevout = btck_TransactionInput::get(input).prevout;
+
+    // Get txid as hex string
+    std::string hex = prevout.hash.GetHex();
+
+    if (hex.size() != 64) {
+        return -1; // should not happen (hash hex is 64 chars)
+    }
+
+    std::strncpy(out->txid, hex.c_str(), sizeof(out->txid) - 1);
+    out->txid[sizeof(out->txid) - 1] = '\0';    // ensure null termination
+
+    out->n = prevout.n;
+
+    return 0;
+}
+
+btck_TransactionInput* btck_transaction_input_copy(const btck_TransactionInput* input)
+{
+    return btck_TransactionInput::copy(input);
+}
+
 const btck_ScriptPubkey* btck_transaction_output_get_script_pubkey(const btck_TransactionOutput* output)
 {
     return btck_ScriptPubkey::ref(&btck_TransactionOutput::get(output).scriptPubKey);
@@ -564,6 +601,11 @@ int64_t btck_transaction_output_get_amount(const btck_TransactionOutput* output)
 void btck_transaction_output_destroy(btck_TransactionOutput* output)
 {
     delete output;
+}
+
+void btck_transaction_input_destroy(btck_TransactionInput* input)
+{
+    delete input;
 }
 
 int btck_script_pubkey_verify(const btck_ScriptPubkey* script_pubkey,
