@@ -203,6 +203,7 @@ void run_verify_test(
     bool taproot)
 {
     auto status = ScriptVerifyStatus::OK;
+    auto script_error = ScriptError::SCRIPT_ERR_OK;
 
     if (taproot) {
         BOOST_CHECK(spent_script_pubkey.Verify(
@@ -211,7 +212,8 @@ void run_verify_test(
             spent_outputs,
             input_index,
             ScriptVerificationFlags::ALL,
-            status));
+            status,
+            script_error));
         BOOST_CHECK(status == ScriptVerifyStatus::OK);
     } else {
         BOOST_CHECK(!spent_script_pubkey.Verify(
@@ -220,7 +222,8 @@ void run_verify_test(
             spent_outputs,
             input_index,
             ScriptVerificationFlags::ALL,
-            status));
+            status,
+            script_error));
         BOOST_CHECK(status == ScriptVerifyStatus::ERROR_SPENT_OUTPUTS_REQUIRED);
         status = ScriptVerifyStatus::OK;
     }
@@ -231,7 +234,8 @@ void run_verify_test(
         spent_outputs,
         input_index,
         VERIFY_ALL_PRE_TAPROOT,
-        status));
+        status,
+        script_error));
     BOOST_CHECK(status == ScriptVerifyStatus::OK);
 
     BOOST_CHECK(spent_script_pubkey.Verify(
@@ -240,7 +244,8 @@ void run_verify_test(
         spent_outputs,
         input_index,
         VERIFY_ALL_PRE_SEGWIT,
-        status));
+        status,
+        script_error));
     BOOST_CHECK(status == ScriptVerifyStatus::OK);
 
     status = ScriptVerifyStatus::OK;
