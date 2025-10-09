@@ -99,6 +99,177 @@ enum class ScriptVerificationFlags : btck_ScriptVerificationFlags {
     ALL = btck_ScriptVerificationFlags_ALL
 };
 
+enum class ScriptError : btck_ScriptError {
+    SCRIPT_ERR_OK = btck_ScriptError_OK,
+    SCRIPT_ERR_UNKNOWN_ERROR = btck_ScriptError_UNKNOWN_ERROR,
+    SCRIPT_ERR_EVAL_FALSE = btck_ScriptError_EVAL_FALSE,
+    SCRIPT_ERR_OP_RETURN = btck_ScriptError_OP_RETURN,
+    SCRIPT_ERR_SCRIPT_SIZE = btck_ScriptError_SCRIPT_SIZE,
+    SCRIPT_ERR_PUSH_SIZE = btck_ScriptError_PUSH_SIZE,
+    SCRIPT_ERR_OP_COUNT = btck_ScriptError_OP_COUNT,
+    SCRIPT_ERR_STACK_SIZE = btck_ScriptError_STACK_SIZE,
+    SCRIPT_ERR_SIG_COUNT = btck_ScriptError_SIG_COUNT,
+    SCRIPT_ERR_PUBKEY_COUNT = btck_ScriptError_PUBKEY_COUNT,
+    SCRIPT_ERR_VERIFY = btck_ScriptError_VERIFY,
+    SCRIPT_ERR_EQUALVERIFY = btck_ScriptError_EQUALVERIFY,
+    SCRIPT_ERR_CHECKMULTISIGVERIFY = btck_ScriptError_CHECKMULTISIGVERIFY,
+    SCRIPT_ERR_CHECKSIGVERIFY = btck_ScriptError_CHECKSIGVERIFY,
+    SCRIPT_ERR_NUMEQUALVERIFY = btck_ScriptError_NUMEQUALVERIFY,
+    SCRIPT_ERR_BAD_OPCODE = btck_ScriptError_BAD_OPCODE,
+    SCRIPT_ERR_DISABLED_OPCODE = btck_ScriptError_DISABLED_OPCODE,
+    SCRIPT_ERR_INVALID_STACK_OPERATION = btck_ScriptError_INVALID_STACK_OPERATION,
+    SCRIPT_ERR_INVALID_ALTSTACK_OPERATION = btck_ScriptError_INVALID_ALTSTACK_OPERATION,
+    SCRIPT_ERR_UNBALANCED_CONDITIONAL = btck_ScriptError_UNBALANCED_CONDITIONAL,
+    SCRIPT_ERR_NEGATIVE_LOCKTIME = btck_ScriptError_NEGATIVE_LOCKTIME,
+    SCRIPT_ERR_UNSATISFIED_LOCKTIME = btck_ScriptError_UNSATISFIED_LOCKTIME,
+    SCRIPT_ERR_SIG_HASHTYPE = btck_ScriptError_SIG_HASHTPE,
+    SCRIPT_ERR_SIG_DER = btck_ScriptError_SIG_DER,
+    SCRIPT_ERR_MINIMALDATA = btck_ScriptError_MINIMALDATA,
+    SCRIPT_ERR_SIG_PUSHONLY = btck_ScriptError_SIG_PUSHONLY,
+    SCRIPT_ERR_SIG_HIGH_S = btck_ScriptError_SIG_HIGH_S,
+    SCRIPT_ERR_SIG_NULLDUMMY = btck_ScriptError_SIG_NULLDUMMY,
+    SCRIPT_ERR_PUBKEYTYPE = btck_ScriptError_PUBKEYTYPE,
+    SCRIPT_ERR_CLEANSTACK = btck_ScriptError_CLEANSTACK,
+    SCRIPT_ERR_MINIMALIF = btck_ScriptError_MINIMALIF,
+    SCRIPT_ERR_SIG_NULLFAIL = btck_ScriptError_SIG_NULLFAIL,
+    SCRIPT_ERR_DISCOURAGE_UPGRADABLE_NOPS = btck_ScriptError_DISCOURAGE_UPGRADABLE_NOPS,
+    SCRIPT_ERR_DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM = btck_ScriptError_DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM,
+    SCRIPT_ERR_DISCOURAGE_UPGRADABLE_TAPROOT_VERSION = btck_ScriptError_DISCOURAGE_UPGRADABLE_TAPROOT_VERSION,
+    SCRIPT_ERR_DISCOURAGE_OP_SUCCESS = btck_ScriptError_DISCOURAGE_OP_SUCCESS,
+    SCRIPT_ERR_DISCOURAGE_UPGRADABLE_PUBKEYTYPE =  btck_ScriptError_DISCOURAGE_UPGRADABLE_PUBKEYTYPE,
+    SCRIPT_ERR_WITNESS_PROGRAM_WRONG_LENGTH = btck_ScriptError_WITNESS_PROGRAM_WRONG_LENGTH,
+    SCRIPT_ERR_WITNESS_PROGRAM_WITNESS_EMPTY = btck_ScriptError_WITNESS_PROGRAM_WITNESS_EMPTY,
+    SCRIPT_ERR_WITNESS_PROGRAM_MISMATCH = btck_ScriptError_WITNESS_PROGRAM_MISMATCH,
+    SCRIPT_ERR_WITNESS_MALLEATED = btck_ScriptError_WITNESS_MALLEATED,
+    SCRIPT_ERR_WITNESS_MALLEATED_P2SH = btck_ScriptError_WITNESS_MALLEATED_P2SH,
+    SCRIPT_ERR_WITNESS_UNEXPECTED = btck_ScriptError_WITNESS_UNEXPECTED,
+    SCRIPT_ERR_WITNESS_PUBKEYTYPE = btck_ScriptError_WITNESS_PUBKEYTYPE,
+    SCRIPT_ERR_SCHNORR_SIG_SIZE = btck_ScriptError_SCHNOOR_SIG_SIZE,
+    SCRIPT_ERR_SCHNORR_SIG_HASHTYPE = btck_ScriptError_SCHNOOR_SIG_HASHTYPE,
+    SCRIPT_ERR_SCHNORR_SIG = btck_ScriptError_SCHNOOR_SIG,
+    SCRIPT_ERR_TAPROOT_WRONG_CONTROL_SIZE = btck_ScriptError_TAPROOT_WRONG_CONTROL_SIZE,
+    SCRIPT_ERR_TAPSCRIPT_VALIDATION_WEIGHT = btck_ScriptError_TAPSCRIPT_VALIDATION_WEIGHT,
+    SCRIPT_ERR_TAPSCRIPT_CHECKMULTISIG = btck_ScriptError_TAPSCRIPT_CHECKMULTISIG,
+    SCRIPT_ERR_TAPSCRIPT_MINIMALIF = btck_ScriptError_TAPSCRIPT_MINIMALIF,
+    SCRIPT_ERR_OP_CODESEPARATOR = btck_ScriptError_OP_CODESEPARATOR,
+    SCRIPT_ERR_SIG_FINDANDDELETE = btck_ScriptError_SIG_FINDANDDELETE,
+    SCRIPT_ERR_ERROR_COUNT = btck_ScriptError_ERROR_COUNT
+};
+
+inline std::string_view ScriptErrorString(ScriptError script_error)
+{
+    switch(script_error) {
+    case ScriptError::SCRIPT_ERR_OK:
+        return "No error";
+    case ScriptError::SCRIPT_ERR_UNKNOWN_ERROR:
+        return "Unknown error";
+    case ScriptError::SCRIPT_ERR_EVAL_FALSE:
+        return "Script evaluated without error but finished with false/empty top stack element";
+    case ScriptError::SCRIPT_ERR_OP_RETURN:
+        return "Script ended with OP_RETURN";
+    case ScriptError::SCRIPT_ERR_SCRIPT_SIZE:
+        return "Script is too big";
+    case ScriptError::SCRIPT_ERR_PUSH_SIZE:
+        return "Push value size limit exceeded";
+    case ScriptError::SCRIPT_ERR_OP_COUNT:
+        return "Operation limit exceeded";
+    case ScriptError::SCRIPT_ERR_STACK_SIZE:
+        return "Stack size limit exceeded";
+    case ScriptError::SCRIPT_ERR_SIG_COUNT:
+        return "Signature count negative or greater than pubkey count";
+    case ScriptError::SCRIPT_ERR_PUBKEY_COUNT:
+        return "Pubkey count negative or limit exceeded";
+    case ScriptError::SCRIPT_ERR_VERIFY:
+        return "Script failed an OP_VERIFY operation";
+    case ScriptError::SCRIPT_ERR_EQUALVERIFY:
+        return "Script failed an OP_EQUALVERIFY operation";
+    case ScriptError::SCRIPT_ERR_CHECKMULTISIGVERIFY:
+        return "Script failed an OP_CHECKMULTISIGVERIFY operation";
+    case ScriptError::SCRIPT_ERR_CHECKSIGVERIFY:
+        return "Script failed an OP_CHECKSIGVERIFY operation";
+    case ScriptError::SCRIPT_ERR_NUMEQUALVERIFY:
+        return "Script failed an OP_NUMEQUALVERIFY operation";
+    case ScriptError::SCRIPT_ERR_BAD_OPCODE:
+        return "Opcode missing or not understood";
+    case ScriptError::SCRIPT_ERR_DISABLED_OPCODE:
+        return "Attempted to use a disabled opcode";
+    case ScriptError::SCRIPT_ERR_INVALID_STACK_OPERATION:
+        return "Operation not valid with current stack size";
+    case ScriptError::SCRIPT_ERR_INVALID_ALTSTACK_OPERATION:
+        return "Operation not valid with the current altstack size";
+    case ScriptError::SCRIPT_ERR_UNBALANCED_CONDITIONAL:
+        return "OP_IF/OP_NOTIF without OP_ENDIF";
+    case ScriptError::SCRIPT_ERR_NEGATIVE_LOCKTIME:
+        return "Negative locktime";
+    case ScriptError::SCRIPT_ERR_UNSATISFIED_LOCKTIME:
+        return "Locktime requirement not satisfied";
+    case ScriptError::SCRIPT_ERR_SIG_HASHTYPE:
+        return "Signature hash type missing or not understood";
+    case ScriptError::SCRIPT_ERR_SIG_DER:
+        return "Non-canonical DER signature";
+    case ScriptError::SCRIPT_ERR_MINIMALDATA:
+        return "Data push larger than necessary";
+    case ScriptError::SCRIPT_ERR_SIG_PUSHONLY:
+        return "Only push operators allowed in signatures";
+    case ScriptError::SCRIPT_ERR_SIG_HIGH_S:
+        return "Non-canonical signature: S value is unnecessarily high";
+    case ScriptError::SCRIPT_ERR_SIG_NULLDUMMY:
+        return "Extra dummy stack element for CHECKMULTISIG must be null";
+    case ScriptError::SCRIPT_ERR_PUBKEYTYPE:
+        return "Public key is neither compressed or uncompressed";
+    case ScriptError::SCRIPT_ERR_CLEANSTACK:
+        return "Stack size must be exactly one after execution";
+    case ScriptError::SCRIPT_ERR_MINIMALIF:
+        return "OP_IF/OP_NOTIF argument must be minimal";
+    case ScriptError::SCRIPT_ERR_SIG_NULLFAIL:
+        return "Signature must be zero for failed CHECK(MULTI)SIG operation";
+    case ScriptError::SCRIPT_ERR_DISCOURAGE_UPGRADABLE_NOPS:
+        return "NOPx reserved for soft-fork upgrades";
+    case ScriptError::SCRIPT_ERR_DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM:
+        return "Witness version reserved for soft-fork upgrades";
+    case ScriptError::SCRIPT_ERR_DISCOURAGE_UPGRADABLE_TAPROOT_VERSION:
+        return "Taproot version reserved for soft-fork upgrades";
+    case ScriptError::SCRIPT_ERR_DISCOURAGE_OP_SUCCESS:
+        return "OP_SUCCESSx reserved for soft-fork upgrades";
+    case ScriptError::SCRIPT_ERR_DISCOURAGE_UPGRADABLE_PUBKEYTYPE:
+        return "Public key version reserved for soft-fork upgrades";
+    case ScriptError::SCRIPT_ERR_WITNESS_PROGRAM_WRONG_LENGTH:
+        return "Witness program has incorrect length";
+    case ScriptError::SCRIPT_ERR_WITNESS_PROGRAM_WITNESS_EMPTY:
+        return "Witness program was passed an empty witness";
+    case ScriptError::SCRIPT_ERR_WITNESS_PROGRAM_MISMATCH:
+        return "Witness program hash mismatch";
+    case ScriptError::SCRIPT_ERR_WITNESS_MALLEATED:
+        return "Witness requires empty scriptSig";
+    case ScriptError::SCRIPT_ERR_WITNESS_MALLEATED_P2SH:
+        return "Witness requires only-redeemscript scriptSig";
+    case ScriptError::SCRIPT_ERR_WITNESS_UNEXPECTED:
+        return "Witness provided for non-witness script";
+    case ScriptError::SCRIPT_ERR_WITNESS_PUBKEYTYPE:
+        return "Using non-compressed keys in segwit";
+    case ScriptError::SCRIPT_ERR_SCHNORR_SIG_SIZE:
+        return "Invalid Schnorr signature size";
+    case ScriptError::SCRIPT_ERR_SCHNORR_SIG_HASHTYPE:
+        return "Invalid Schnorr signature hash type";
+    case ScriptError::SCRIPT_ERR_SCHNORR_SIG:
+        return "Invalid Schnorr signature";
+    case ScriptError::SCRIPT_ERR_TAPROOT_WRONG_CONTROL_SIZE:
+        return "Invalid Taproot control block size";
+    case ScriptError::SCRIPT_ERR_TAPSCRIPT_VALIDATION_WEIGHT:
+        return "Too much signature validation relative to witness weight";
+    case ScriptError::SCRIPT_ERR_TAPSCRIPT_CHECKMULTISIG:
+        return "OP_CHECKMULTISIG(VERIFY) is not available in tapscript";
+    case ScriptError::SCRIPT_ERR_TAPSCRIPT_MINIMALIF:
+        return "OP_IF/OP_NOTIF argument must be minimal in tapscript";
+    case ScriptError::SCRIPT_ERR_OP_CODESEPARATOR:
+        return "Using OP_CODESEPARATOR in non-witness script";
+    case ScriptError::SCRIPT_ERR_SIG_FINDANDDELETE:
+        return "Signature is found in scriptCode";
+    case ScriptError::SCRIPT_ERR_ERROR_COUNT:
+        return "Error count marker";
+    }
+}
+
 template <typename T>
 struct is_bitmask_enum : std::false_type {
 };
@@ -383,12 +554,33 @@ public:
                 std::span<const TransactionOutput> spent_outputs,
                 unsigned int input_index,
                 ScriptVerificationFlags flags,
-                ScriptVerifyStatus& status) const;
+                ScriptVerifyStatus& status,
+                ScriptError& script_error) const;
 
     std::vector<std::byte> ToBytes() const
     {
         return write_bytes(impl(), btck_script_pubkey_to_bytes);
     }
+};
+
+class ScriptVerificationError : public std::runtime_error
+{
+private:
+    ScriptError m_error;
+    ScriptVerifyStatus m_status;
+
+public:
+
+
+    ScriptVerificationError(ScriptError script_error, ScriptVerifyStatus status)
+        : std::runtime_error(std::string(ScriptErrorString(script_error))),
+          m_error{script_error},
+          m_status{status}
+    {
+    }
+
+    ScriptError GetScriptError() const { return m_error; }
+    ScriptVerifyStatus GetStatus() const { return m_status; }
 };
 
 class ScriptPubkeyView : public View<btck_ScriptPubkey>, public ScriptPubkeyApi<ScriptPubkeyView>
@@ -633,7 +825,8 @@ bool ScriptPubkeyApi<Derived>::Verify(int64_t amount,
                                       const std::span<const TransactionOutput> spent_outputs,
                                       unsigned int input_index,
                                       ScriptVerificationFlags flags,
-                                      ScriptVerifyStatus& status) const
+                                      ScriptVerifyStatus& status,
+                                      ScriptError& script_error) const
 {
     const btck_TransactionOutput** spent_outputs_ptr = nullptr;
     std::vector<const btck_TransactionOutput*> raw_spent_outputs;
@@ -652,7 +845,8 @@ bool ScriptPubkeyApi<Derived>::Verify(int64_t amount,
         spent_outputs_ptr, spent_outputs.size(),
         input_index,
         static_cast<btck_ScriptVerificationFlags>(flags),
-        reinterpret_cast<btck_ScriptVerifyStatus*>(&status));
+        reinterpret_cast<btck_ScriptVerifyStatus*>(&status),
+        reinterpret_cast<btck_ScriptError*>(script_error));
     return result == 1;
 }
 
