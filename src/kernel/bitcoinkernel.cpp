@@ -484,6 +484,66 @@ struct ChainMan {
 
 } // namespace
 
+btck_ScriptError cast_script_error(ScriptError error) {
+    switch (error) {
+        case SCRIPT_ERR_OK:                                          return btck_ScriptError_OK;
+        case SCRIPT_ERR_UNKNOWN_ERROR:                               return btck_ScriptError_UNKNOWN_ERROR;
+        case SCRIPT_ERR_EVAL_FALSE:                                  return btck_ScriptError_EVAL_FALSE;
+        case SCRIPT_ERR_OP_RETURN:                                   return btck_ScriptError_OP_RETURN;
+        case SCRIPT_ERR_SCRIPT_SIZE:                                 return btck_ScriptError_SCRIPT_SIZE;
+        case SCRIPT_ERR_PUSH_SIZE:                                   return btck_ScriptError_PUSH_SIZE;
+        case SCRIPT_ERR_OP_COUNT:                                    return btck_ScriptError_OP_COUNT;
+        case SCRIPT_ERR_STACK_SIZE:                                  return btck_ScriptError_STACK_SIZE;
+        case SCRIPT_ERR_SIG_COUNT:                                   return btck_ScriptError_SIG_COUNT;
+        case SCRIPT_ERR_PUBKEY_COUNT:                                return btck_ScriptError_PUBKEY_COUNT;
+        case SCRIPT_ERR_VERIFY:                                      return btck_ScriptError_VERIFY;
+        case SCRIPT_ERR_EQUALVERIFY:                                 return btck_ScriptError_EQUALVERIFY;
+        case SCRIPT_ERR_CHECKMULTISIGVERIFY:                         return btck_ScriptError_CHECKMULTISIGVERIFY;
+        case SCRIPT_ERR_CHECKSIGVERIFY:                              return btck_ScriptError_CHECKSIGVERIFY;
+        case SCRIPT_ERR_NUMEQUALVERIFY:                              return btck_ScriptError_NUMEQUALVERIFY;
+        case SCRIPT_ERR_BAD_OPCODE:                                  return btck_ScriptError_BAD_OPCODE;
+        case SCRIPT_ERR_DISABLED_OPCODE:                             return btck_ScriptError_DISABLED_OPCODE;
+        case SCRIPT_ERR_INVALID_STACK_OPERATION:                     return btck_ScriptError_INVALID_STACK_OPERATION;
+        case SCRIPT_ERR_INVALID_ALTSTACK_OPERATION:                  return btck_ScriptError_INVALID_ALTSTACK_OPERATION;
+        case SCRIPT_ERR_UNBALANCED_CONDITIONAL:                      return btck_ScriptError_UNBALANCED_CONDITIONAL;
+        case SCRIPT_ERR_NEGATIVE_LOCKTIME:                           return btck_ScriptError_NEGATIVE_LOCKTIME;
+        case SCRIPT_ERR_UNSATISFIED_LOCKTIME:                        return btck_ScriptError_UNSATISFIED_LOCKTIME;
+        case SCRIPT_ERR_SIG_HASHTYPE:                                return btck_ScriptError_SIG_HASHTPE;
+        case SCRIPT_ERR_SIG_DER:                                     return btck_ScriptError_SIG_DER;
+        case SCRIPT_ERR_MINIMALDATA:                                 return btck_ScriptError_MINIMALDATA;
+        case SCRIPT_ERR_SIG_PUSHONLY:                                return btck_ScriptError_SIG_PUSHONLY;
+        case SCRIPT_ERR_SIG_HIGH_S:                                  return btck_ScriptError_SIG_HIGH_S;
+        case SCRIPT_ERR_SIG_NULLDUMMY:                               return btck_ScriptError_SIG_NULLDUMMY;
+        case SCRIPT_ERR_PUBKEYTYPE:                                  return btck_ScriptError_PUBKEYTYPE;
+        case SCRIPT_ERR_CLEANSTACK:                                  return btck_ScriptError_CLEANSTACK;
+        case SCRIPT_ERR_MINIMALIF:                                   return btck_ScriptError_MINIMALIF;
+        case SCRIPT_ERR_SIG_NULLFAIL:                                return btck_ScriptError_SIG_NULLFAIL;
+        case SCRIPT_ERR_DISCOURAGE_UPGRADABLE_NOPS:                  return btck_ScriptError_DISCOURAGE_UPGRADABLE_NOPS;
+        case SCRIPT_ERR_DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM:       return btck_ScriptError_DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM;
+        case SCRIPT_ERR_DISCOURAGE_UPGRADABLE_TAPROOT_VERSION:       return btck_ScriptError_DISCOURAGE_UPGRADABLE_TAPROOT_VERSION;
+        case SCRIPT_ERR_DISCOURAGE_OP_SUCCESS:                       return btck_ScriptError_DISCOURAGE_OP_SUCCESS;
+        case SCRIPT_ERR_DISCOURAGE_UPGRADABLE_PUBKEYTYPE:            return btck_ScriptError_DISCOURAGE_UPGRADABLE_PUBKEYTYPE;
+        case SCRIPT_ERR_WITNESS_PROGRAM_WRONG_LENGTH:                return btck_ScriptError_WITNESS_PROGRAM_WRONG_LENGTH;
+        case SCRIPT_ERR_WITNESS_PROGRAM_WITNESS_EMPTY:               return btck_ScriptError_WITNESS_PROGRAM_WITNESS_EMPTY;
+        case SCRIPT_ERR_WITNESS_PROGRAM_MISMATCH:                    return btck_ScriptError_WITNESS_PROGRAM_MISMATCH;
+        case SCRIPT_ERR_WITNESS_MALLEATED:                           return btck_ScriptError_WITNESS_MALLEATED;
+        case SCRIPT_ERR_WITNESS_MALLEATED_P2SH:                      return btck_ScriptError_WITNESS_MALLEATED_P2SH;
+        case SCRIPT_ERR_WITNESS_UNEXPECTED:                          return btck_ScriptError_WITNESS_UNEXPECTED;
+        case SCRIPT_ERR_WITNESS_PUBKEYTYPE:                          return btck_ScriptError_WITNESS_PUBKEYTYPE;
+        case SCRIPT_ERR_SCHNORR_SIG_SIZE:                            return btck_ScriptError_SCHNOOR_SIG_SIZE;
+        case SCRIPT_ERR_SCHNORR_SIG_HASHTYPE:                        return btck_ScriptError_SCHNOOR_SIG_HASHTYPE;
+        case SCRIPT_ERR_SCHNORR_SIG:                                 return btck_ScriptError_SCHNOOR_SIG;
+        case SCRIPT_ERR_TAPROOT_WRONG_CONTROL_SIZE:                  return btck_ScriptError_TAPROOT_WRONG_CONTROL_SIZE;
+        case SCRIPT_ERR_TAPSCRIPT_VALIDATION_WEIGHT:                 return btck_ScriptError_TAPSCRIPT_VALIDATION_WEIGHT;
+        case SCRIPT_ERR_TAPSCRIPT_CHECKMULTISIG:                     return btck_ScriptError_TAPSCRIPT_CHECKMULTISIG;
+        case SCRIPT_ERR_TAPSCRIPT_MINIMALIF:                         return btck_ScriptError_TAPSCRIPT_MINIMALIF;
+        case SCRIPT_ERR_OP_CODESEPARATOR:                            return btck_ScriptError_OP_CODESEPARATOR;
+        case SCRIPT_ERR_SIG_FINDANDDELETE:                           return btck_ScriptError_SIG_FINDANDDELETE;
+        case SCRIPT_ERR_ERROR_COUNT:                                 return btck_ScriptError_ERROR_COUNT;
+    }
+    assert(false);
+}
+
 struct btck_Transaction : Handle<btck_Transaction, std::shared_ptr<const CTransaction>> {};
 struct btck_TransactionOutput : Handle<btck_TransactionOutput, CTxOut> {};
 struct btck_ScriptPubkey : Handle<btck_ScriptPubkey, CScript> {};
@@ -615,14 +675,18 @@ int btck_script_pubkey_verify(const btck_ScriptPubkey* script_pubkey,
                               const btck_TransactionOutput** spent_outputs_, size_t spent_outputs_len,
                               const unsigned int input_index,
                               const btck_ScriptVerificationFlags flags,
-                              btck_ScriptVerifyStatus* status)
+                              btck_ScriptVerifyStatus* status,
+                              btck_ScriptError* script_error)
 {
     const CAmount amount{amount_};
+
+    // Initialize output parameters for safe defaults
+    if (script_error) *script_error = btck_ScriptError_OK;
 
     // Assert that all specified flags are part of the interface before continuing
     assert((flags & ~btck_ScriptVerificationFlags_ALL) == 0);
 
-    if (!is_valid_flag_combination(script_verify_flags::from_int(flags))) {
+    if (!is_valid_flag_combination(flags)) {
         if (status) *status = btck_ScriptVerifyStatus_ERROR_INVALID_FLAGS_COMBINATION;
         return 0;
     }
@@ -650,12 +714,18 @@ int btck_script_pubkey_verify(const btck_ScriptPubkey* script_pubkey,
         txdata.Init(tx, std::move(spent_outputs));
     }
 
+    ScriptError serror = ScriptError::SCRIPT_ERR_OK;
     bool result = VerifyScript(tx.vin[input_index].scriptSig,
                                btck_ScriptPubkey::get(script_pubkey),
                                &tx.vin[input_index].scriptWitness,
-                               script_verify_flags::from_int(flags),
+                               flags,
                                TransactionSignatureChecker(&tx, input_index, amount, txdata, MissingDataBehavior::FAIL),
-                               nullptr);
+                               &serror);
+
+    if (script_error && serror != ScriptError::SCRIPT_ERR_OK) {
+        *script_error = cast_script_error(serror);
+    }
+
     return result ? 1 : 0;
 }
 
