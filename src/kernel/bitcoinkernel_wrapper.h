@@ -701,6 +701,74 @@ public:
         : Handle{view} {}
 };
 
+template <typename Derived>
+class BlockHeaderApi
+{
+private:
+    auto impl() const
+    {
+        return static_cast<const Derived*>(this)->get();
+    }
+
+    friend Derived;
+    BlockHeaderApi() = default;
+
+public:
+    BlockHash GetHash() const
+    {
+        return BlockHash{btck_block_header_get_hash(impl())};
+    }
+
+    BlockHashView GetPrevHash() const
+    {
+        return BlockHashView{btck_block_header_get_prev_hash(impl())};
+    }
+
+    uint32_t GetTimestamp() const
+    {
+        return btck_block_header_get_timestamp(impl());
+    }
+
+    uint32_t GetBits() const
+    {
+        return btck_block_header_get_bits(impl());
+    }
+
+    int32_t GetVersion() const
+    {
+        return btck_block_header_get_version(impl());
+    }
+
+    uint32_t GetNonce() const
+    {
+        return btck_block_header_get_nonce(impl());
+    }
+
+    std::vector<std::byte> ToBytes() const
+    {
+        return write_bytes(impl(), btck_block_header_to_bytes);
+    }
+};
+
+class BlockHeaderView : public View<btck_BlockHeader>, public BlockHeaderApi<BlockHeaderView>
+{
+public:
+    explicit BlockHeaderView(const btck_BlockHeader* ptr) : View{ptr} {}
+};
+
+class BlockHeader : public Handle<btck_BlockHeader, btck_block_header_copy, btck_block_header_destroy>, public BlockHeaderApi<BlockHeader>
+{
+public:
+    explicit BlockHeader(std::span<const std::byte> raw_header)
+        : Handle{btck_block_header_create(reinterpret_cast<const unsigned char*>(raw_header.data()), raw_header.size())} {}
+    
+    explicit BlockHeader(btck_BlockHeader* header)
+        : Handle{header} {}
+    
+    BlockHeader(const BlockHeaderView& view)
+        : Handle{view} {}
+};
+
 class Block : public Handle<btck_Block, btck_block_copy, btck_block_destroy>
 {
 public:
@@ -726,6 +794,11 @@ public:
     BlockHash GetHash() const
     {
         return BlockHash{btck_block_get_hash(get())};
+    }
+
+    BlockHeader GetHeader() const
+    {
+        return BlockHeader{btck_block_get_header(get())};
     }
 
     std::vector<std::byte> ToBytes() const
@@ -1128,6 +1201,14 @@ public:
         int _new_block;
         int res = btck_chainstate_manager_process_block(get(), block.get(), &_new_block);
         if (new_block) *new_block = _new_block == 1;
+        return res == 0;
+    }
+
+    bool ProcessBlockHeader(const BlockHeader& header, bool* accepted = nullptr)
+    {
+        int _accepted;
+        int res{btck_chainstate_manager_process_block_header(get(), header.get(), &_accepted)};
+        if(accepted) *accepted = _accepted == 1;
         return res == 0;
     }
 

@@ -574,6 +574,43 @@ BOOST_AUTO_TEST_CASE(btck_context_tests)
     }
 }
 
+BOOST_AUTO_TEST_CASE(btck_block_header_tests)
+{
+    auto raw_header = hex_string_to_byte_vec("010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e36299");
+
+    BOOST_CHECK_EQUAL(raw_header.size(), 80);
+
+    BlockHeader header{raw_header};
+
+    // Test that we can retrieve header fields
+    BOOST_CHECK_EQUAL(header.GetVersion(), 1);
+    BOOST_CHECK_EQUAL(header.GetTimestamp(), 1231469665);
+    BOOST_CHECK_EQUAL(header.GetBits(), 0x1d00ffff);
+    BOOST_CHECK_EQUAL(header.GetNonce(), 2573394689);
+
+    // Test hash calculation
+    auto hash{header.GetHash()};
+    auto hash_bytes{hash.ToBytes()};
+    // Block 1 hash: 00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048
+    std::string expected_hash{"00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048"};
+    BOOST_CHECK_EQUAL(byte_span_to_hex_string_reversed(hash_bytes), expected_hash);
+
+    // Test prev hash
+    auto prev_hash{header.GetPrevHash()};
+    auto prev_hash_bytes{prev_hash.ToBytes()};
+    // Genesis block hash: 000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f
+    std::string expected_prev_hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
+    BOOST_CHECK_EQUAL(byte_span_to_hex_string_reversed(prev_hash_bytes), expected_prev_hash);
+
+    // Test invalid header size
+    auto invalid_header{hex_string_to_byte_vec("0100000043497fd7f826")};
+    BOOST_CHECK_THROW(BlockHeader{invalid_header}, std::runtime_error);
+
+    // Test empty header
+    auto empty_header{hex_string_to_byte_vec("")};
+    BOOST_CHECK_THROW(BlockHeader{empty_header}, std::runtime_error);
+}
+
 BOOST_AUTO_TEST_CASE(btck_block)
 {
     Block block{hex_string_to_byte_vec(REGTEST_BLOCK_DATA[0])};
@@ -727,8 +764,13 @@ void chainman_mainnet_validation_test(TestDirectory& test_directory)
     // mainnet block 1
     auto raw_block = hex_string_to_byte_vec("010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000");
     Block block{raw_block};
+    BlockHeader header{block.GetHeader()};
     TransactionView tx{block.GetTransaction(block.CountTransactions() - 1)};
     BOOST_CHECK_EQUAL(byte_span_to_hex_string_reversed(tx.Txid().ToBytes()), "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098");
+    BOOST_CHECK_EQUAL(header.GetVersion(), 1);
+    BOOST_CHECK_EQUAL(header.GetTimestamp(), 1231469665);
+    BOOST_CHECK_EQUAL(header.GetBits(), 0x1d00ffff);
+    BOOST_CHECK_EQUAL(header.GetNonce(), 2573394689);
     BOOST_CHECK_EQUAL(tx.CountInputs(), 1);
     Transaction tx2 = tx;
     BOOST_CHECK_EQUAL(tx2.CountInputs(), 1);

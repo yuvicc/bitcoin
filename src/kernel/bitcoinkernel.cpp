@@ -494,6 +494,7 @@ struct btck_BlockHash : Handle<btck_BlockHash, uint256> {};
 struct btck_TransactionInput : Handle<btck_TransactionInput, CTxIn> {};
 struct btck_TransactionOutPoint: Handle<btck_TransactionOutPoint, COutPoint> {};
 struct btck_Txid: Handle<btck_Txid, Txid> {};
+struct btck_BlockHeader: Handle<btck_BlockHeader, CBlockHeader> {};
 
 btck_Transaction* btck_transaction_create(const void* raw_transaction, size_t raw_transaction_len)
 {
@@ -998,6 +999,32 @@ const btck_BlockTreeEntry* btck_chainstate_manager_get_block_tree_entry_by_hash(
     return btck_BlockTreeEntry::ref(block_index);
 }
 
+int btck_chainstate_manager_process_block_header(btck_ChainstateManager* chainman, btck_BlockHeader* header, int* accepted)
+{
+    try {
+        auto& chainman_{btck_ChainstateManager::get(chainman)};
+        const auto& header_{btck_BlockHeader::get(header)};
+
+        std::vector<CBlockHeader> headers{header_};
+        BlockValidationState state;
+
+        bool result = chainman_.m_chainman->ProcessNewBlockHeaders(
+            headers,
+            /*min_pow_checked=*/true,
+            state);
+        
+        if (accepted) {
+            *accepted = result ? 1 : 0;
+        }
+
+        return 0;
+    } catch (std::exception& e) {
+        LogError("Failed to process block header: %s", e.what());
+        if (accepted) *accepted = 0;
+        return -1;
+    }
+}
+
 void btck_chainstate_manager_destroy(btck_ChainstateManager* chainman)
 {
     {
@@ -1259,3 +1286,85 @@ int btck_chain_contains(const btck_Chain* chain, const btck_BlockTreeEntry* entr
     LOCK(::cs_main);
     return btck_Chain::get(chain).Contains(&btck_BlockTreeEntry::get(entry)) ? 1 : 0;
 }
+
+btck_BlockHeader* btck_block_get_header(const btck_Block* block)
+{
+    const auto& block_ptr = btck_Block::get(block);
+    return btck_BlockHeader::create(block_ptr->GetBlockHeader());
+}
+
+btck_BlockHeader* btck_block_header_create(const unsigned char* raw_header, size_t raw_header_len)
+{
+    if (raw_header_len != 80) {
+        LogError("invalid header length %zu (expected 80)", raw_header_len);
+        return nullptr;
+    }
+
+    auto header{new CBlockHeader{}};
+
+    std::span<const unsigned char> header_span{raw_header, raw_header_len};
+    DataStream stream{header_span};
+
+    try {
+        stream >> *header;
+    } catch (const std::exception& e) {
+        delete header;
+        LogError("Block Header decode failed: %s", e.what());
+        return nullptr;
+    }
+
+    return reinterpret_cast<btck_BlockHeader*>(header);
+}
+
+btck_BlockHeader* btck_block_header_copy(const btck_BlockHeader* header)
+{
+    return btck_BlockHeader::copy(header);
+}
+
+int btck_block_header_to_bytes(const btck_BlockHeader* header, btck_WriteBytes writer, void* user_data)
+{
+    try {
+        WriterStream ws{writer, user_data};
+        ws << btck_BlockHeader::get(header);
+        return 0;
+    } catch (const std::exception& e) {
+        LogError("btck_block_header_to_bytes failed %s", e.what());
+        return -1;
+    }
+}
+
+btck_BlockHash* btck_block_header_get_hash(const btck_BlockHeader* header)
+{
+    return btck_BlockHash::create(btck_BlockHeader::get(header).GetHash());
+}
+
+const btck_BlockHash* btck_block_header_get_prev_hash(const btck_BlockHeader* header)
+{
+    return btck_BlockHash::ref(&btck_BlockHeader::get(header).hashPrevBlock);
+}
+
+uint32_t btck_block_header_get_timestamp(const btck_BlockHeader* header)
+{
+    return btck_BlockHeader::get(header).nTime;
+}
+
+uint32_t btck_block_header_get_bits(const btck_BlockHeader* header)
+{
+    return btck_BlockHeader::get(header).nBits;
+}
+
+int32_t btck_block_header_get_version(const btck_BlockHeader* header)
+{
+    return btck_BlockHeader::get(header).nVersion;
+}
+
+uint32_t btck_block_header_get_nonce(const btck_BlockHeader* header)
+{
+    return btck_BlockHeader::get(header).nNonce;
+}
+
+void btck_block_header_destroy(btck_BlockHeader* header)
+{
+    delete header;
+}
+
