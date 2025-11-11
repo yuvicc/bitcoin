@@ -193,8 +193,8 @@ int main(int argc, char* argv[])
         }
 
         bool new_block = false;
-        bool accepted = chainman->ProcessBlock(*block, &new_block);
-        if (accepted) {
+        BlockValidationState state = chainman->ProcessBlock(*block, &new_block);
+        if (state.GetValidationMode() == ValidationMode::VALID) {
             std::cerr << "Block has not yet been rejected" << std::endl;
         } else {
             std::cerr << "Block was not accepted" << std::endl;

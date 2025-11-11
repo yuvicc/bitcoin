@@ -4505,14 +4505,13 @@ bool ChainstateManager::AcceptBlock(const std::shared_ptr<const CBlock>& pblock,
     return true;
 }
 
-bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block)
+BlockValidationState ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block)
 {
     AssertLockNotHeld(cs_main);
-
+    BlockValidationState state;
     {
         CBlockIndex *pindex = nullptr;
         if (new_block) *new_block = false;
-        BlockValidationState state;
 
         // CheckBlock() does not support multi-threaded block validation because CBlock::fChecked can cause data race.
         // Therefore, the following critical section must include the CheckBlock() call as well.
@@ -4533,26 +4532,25 @@ bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& blo
                 m_options.signals->BlockChecked(block, state);
             }
             LogError("%s: AcceptBlock FAILED (%s)\n", __func__, state.ToString());
-            return false;
+            return state;
         }
     }
 
     NotifyHeaderTip();
 
-    BlockValidationState state; // Only used to report errors, not invalidity - ignore it
     if (!ActiveChainstate().ActivateBestChain(state, block)) {
         LogError("%s: ActivateBestChain failed (%s)\n", __func__, state.ToString());
-        return false;
+        return state;
     }
 
     Chainstate* bg_chain{WITH_LOCK(cs_main, return BackgroundSyncInProgress() ? m_ibd_chainstate.get() : nullptr)};
     BlockValidationState bg_state;
     if (bg_chain && !bg_chain->ActivateBestChain(bg_state, block)) {
         LogError("%s: [background] ActivateBestChain failed (%s)\n", __func__, bg_state.ToString());
-        return false;
+        return bg_state;
      }
 
-    return true;
+    return state;
 }
 
 MempoolAcceptResult ChainstateManager::ProcessTransaction(const CTransactionRef& tx, bool test_accept)

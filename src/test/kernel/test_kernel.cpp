@@ -744,13 +744,15 @@ void chainman_mainnet_validation_test(TestDirectory& test_directory)
     auto ser_block{block.ToBytes()};
     check_equal(ser_block, raw_block);
     bool new_block = false;
-    BOOST_CHECK(chainman->ProcessBlock(block, &new_block));
+    BlockValidationState state{chainman->ProcessBlock(block, &new_block)};
+    BOOST_CHECK(state.GetValidationMode() == ValidationMode::VALID);
     BOOST_CHECK(new_block);
 
     validation_interface->m_expected_valid_block = std::nullopt;
     new_block = false;
     Block invalid_block{hex_string_to_byte_vec(REGTEST_BLOCK_DATA[REGTEST_BLOCK_DATA.size() - 1])};
-    BOOST_CHECK(!chainman->ProcessBlock(invalid_block, &new_block));
+    BlockValidationState invalid_state{chainman->ProcessBlock(invalid_block, &new_block)};
+    BOOST_CHECK(invalid_state.GetValidationMode() != ValidationMode::VALID);
     BOOST_CHECK(!new_block);
 
     auto chain{chainman->GetChain()};
@@ -770,7 +772,8 @@ void chainman_mainnet_validation_test(TestDirectory& test_directory)
     BOOST_CHECK(!tip_2.GetPrevious());
 
     // If we try to validate it again, it should be a duplicate
-    BOOST_CHECK(chainman->ProcessBlock(block, &new_block));
+    BlockValidationState dup_state{chainman->ProcessBlock(block, &new_block)};
+    BOOST_CHECK(dup_state.GetValidationMode() == ValidationMode::VALID);
     BOOST_CHECK(!new_block);
 }
 
@@ -836,7 +839,8 @@ BOOST_AUTO_TEST_CASE(btck_chainman_regtest_tests)
         for (size_t i{0}; i < mid; i++) {
             Block block{hex_string_to_byte_vec(REGTEST_BLOCK_DATA[i])};
             bool new_block{false};
-            BOOST_CHECK(chainman->ProcessBlock(block, &new_block));
+            BlockValidationState state{chainman->ProcessBlock(block, &new_block)};
+            BOOST_CHECK(state.GetValidationMode() == ValidationMode::VALID);
             BOOST_CHECK(new_block);
         }
     }
@@ -846,7 +850,8 @@ BOOST_AUTO_TEST_CASE(btck_chainman_regtest_tests)
     for (size_t i{mid}; i < REGTEST_BLOCK_DATA.size(); i++) {
         Block block{hex_string_to_byte_vec(REGTEST_BLOCK_DATA[i])};
         bool new_block{false};
-        BOOST_CHECK(chainman->ProcessBlock(block, &new_block));
+        BlockValidationState state{chainman->ProcessBlock(block, &new_block)};
+        BOOST_CHECK(state.GetValidationMode() == ValidationMode::VALID);
         BOOST_CHECK(new_block);
     }
 
