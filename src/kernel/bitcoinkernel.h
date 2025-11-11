@@ -1037,10 +1037,7 @@ BITCOINKERNEL_API int BITCOINKERNEL_WARN_UNUSED_RESULT btck_chainstate_manager_i
  * @brief Process and validate the passed in block with the chainstate
  * manager. Processing first does checks on the block, and if these passed,
  * saves it to disk. It then validates the block against the utxo set. If it is
- * valid, the chain is extended with it. The return value is not indicative of
- * the block's validity. Detailed information on the validity of the block can
- * be retrieved by registering the `block_checked` callback in the validation
- * interface.
+ * valid, the chain is extended with it.
  *
  * @param[in] chainstate_manager Non-null.
  * @param[in] block              Non-null, block to be validated.
@@ -1048,9 +1045,11 @@ BITCOINKERNEL_API int BITCOINKERNEL_WARN_UNUSED_RESULT btck_chainstate_manager_i
  * @param[out] new_block         Nullable, will be set to 1 if this block was not processed before. Note that this means it
  *                               might also not be 1 if processing was attempted before, but the block was found invalid
  *                               before its data was persisted.
- * @return                       0 if processing the block was successful. Will also return 0 for valid, but duplicate blocks.
+ * @return                       A block validation state containing detailed processing results.
+ *                               The caller takes ownership and must free it with
+ *                               btck_block_validation_state_destroy(). Never returns null.
  */
-BITCOINKERNEL_API int BITCOINKERNEL_WARN_UNUSED_RESULT btck_chainstate_manager_process_block(
+BITCOINKERNEL_API btck_BlockValidationState* BITCOINKERNEL_WARN_UNUSED_RESULT btck_chainstate_manager_process_block(
     btck_ChainstateManager* chainstate_manager,
     const btck_Block* block,
     int* new_block) BITCOINKERNEL_ARG_NONNULL(1, 2, 3);

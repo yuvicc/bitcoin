@@ -1130,12 +1130,13 @@ public:
         return btck_chainstate_manager_import_blocks(get(), c_paths.data(), c_paths_lens.data(), c_paths.size()) == 0;
     }
 
-    bool ProcessBlock(const Block& block, bool* new_block)
+    BlockValidationState ProcessBlock(const Block& block, bool* new_block)
     {
         int _new_block;
-        int res = btck_chainstate_manager_process_block(get(), block.get(), &_new_block);
+        btck_BlockValidationState* state_ptr = btck_chainstate_manager_process_block(get(), block.get(), &_new_block);
         if (new_block) *new_block = _new_block == 1;
-        return res == 0;
+
+        return BlockValidationState{state_ptr};
     }
 
     ChainView GetChain() const
