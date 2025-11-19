@@ -494,6 +494,7 @@ struct btck_BlockHash : Handle<btck_BlockHash, uint256> {};
 struct btck_TransactionInput : Handle<btck_TransactionInput, CTxIn> {};
 struct btck_TransactionOutPoint: Handle<btck_TransactionOutPoint, COutPoint> {};
 struct btck_Txid: Handle<btck_Txid, Txid> {};
+struct btck_ConsensusParams: Handle<btck_ConsensusParams, Consensus::Params> {};
 
 btck_Transaction* btck_transaction_create(const void* raw_transaction, size_t raw_transaction_len)
 {
@@ -782,6 +783,11 @@ btck_ChainParameters* btck_chain_parameters_copy(const btck_ChainParameters* cha
     return btck_ChainParameters::copy(chain_parameters);
 }
 
+const btck_ConsensusParams* btck_chain_parameters_get_consensus_params(const btck_ChainParameters* chain_parameters)
+{
+    return btck_ConsensusParams::ref(&btck_ChainParameters::get(chain_parameters).GetConsensus());
+}
+
 void btck_chain_parameters_destroy(btck_ChainParameters* chain_parameters)
 {
     delete chain_parameters;
@@ -1050,6 +1056,16 @@ btck_Block* btck_block_create(const void* raw_block, size_t raw_block_length)
 btck_Block* btck_block_copy(const btck_Block* block)
 {
     return btck_Block::copy(block);
+}
+
+int btck_block_check(const btck_Block* block, const btck_ConsensusParams* consensus_params, bool check_pow, bool check_merkel_root, btck_BlockValidationState* validation_state)
+{
+    auto block_state = std::make_unique<BlockValidationState>();
+    bool result = CheckBlock(*btck_Block::get(block), *block_state, btck_ConsensusParams::get(consensus_params), check_pow, check_merkel_root);
+
+    *reinterpret_cast<BlockValidationState*>(validation_state) = *block_state;
+
+    return result ? 1 : 0;
 }
 
 size_t btck_block_count_transactions(const btck_Block* block)

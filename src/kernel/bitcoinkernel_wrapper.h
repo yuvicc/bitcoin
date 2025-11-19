@@ -369,6 +369,7 @@ public:
 
 class Transaction;
 class TransactionOutput;
+class BlockValidationState;
 
 template <typename Derived>
 class ScriptPubkeyApi
@@ -702,6 +703,12 @@ public:
         : Handle{view} {}
 };
 
+class ConsensusParamsView : public View<btck_ConsensusParams>
+{
+public:
+    explicit ConsensusParamsView(const btck_ConsensusParams* ptr) : View{ptr} {}
+};
+
 class Block : public Handle<btck_Block, btck_block_copy, btck_block_destroy>
 {
 public:
@@ -720,6 +727,15 @@ public:
     TransactionView GetTransaction(size_t index) const
     {
         return TransactionView{btck_block_get_transaction_at(get(), index)};
+    }
+
+    bool Check(const ConsensusParamsView& consensus_params,
+        bool check_pow,
+        bool check_merkle_root,
+        BlockValidationState& state) const
+    {
+        auto raw_state = reinterpret_cast<btck_BlockValidationState*>(const_cast<BlockValidationState*>(&state));
+        return btck_block_check(get(), consensus_params.get(), check_pow, check_merkle_root, raw_state) == 1;
     }
 
     MAKE_RANGE_METHOD(Transactions, Block, &Block::CountTransactions, &Block::GetTransaction, *this)
@@ -867,6 +883,11 @@ class ChainParams : public Handle<btck_ChainParameters, btck_chain_parameters_co
 public:
     ChainParams(ChainType chain_type)
         : Handle{btck_chain_parameters_create(static_cast<btck_ChainType>(chain_type))} {}
+
+    ConsensusParamsView GetConsensusParams() const
+    {
+        return ConsensusParamsView{btck_chain_parameters_get_consensus_params(get())};
+    }
 };
 
 class ContextOptions : public UniqueHandle<btck_ContextOptions, btck_context_options_destroy>

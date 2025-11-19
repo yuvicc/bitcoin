@@ -215,6 +215,11 @@ typedef struct btck_Block btck_Block;
 typedef struct btck_BlockValidationState btck_BlockValidationState;
 
 /**
+ * Opaque data structure for holding the Consensus Params.
+ */
+typedef struct btck_ConsensusParams btck_ConsensusParams;
+
+/**
  * Opaque data structure for holding the currently known best-chain associated
  * with a chainstate.
  */
@@ -790,6 +795,16 @@ BITCOINKERNEL_API btck_ChainParameters* BITCOINKERNEL_WARN_UNUSED_RESULT btck_ch
     const btck_ChainParameters* chain_parameters) BITCOINKERNEL_ARG_NONNULL(1);
 
 /**
+ * @brief Get consensus params from chain parameters. The returned consensus params
+ * is not owned and depends on the lifetime of the chain parameters.
+ *
+ * @param[in] chain_parameters  Non-null.
+ * @return                      The consensus parameters.
+ */
+BITCOINKERNEL_API const btck_ConsensusParams* BITCOINKERNEL_WARN_UNUSED_RESULT btck_chain_parameters_get_consensus_params(
+    const btck_ChainParameters* chain_parameters) BITCOINKERNEL_ARG_NONNULL(1);
+
+/**
  * Destroy the chain parameters.
  */
 BITCOINKERNEL_API void btck_chain_parameters_destroy(btck_ChainParameters* chain_parameters);
@@ -1127,6 +1142,26 @@ BITCOINKERNEL_API btck_Block* BITCOINKERNEL_WARN_UNUSED_RESULT btck_block_create
  */
 BITCOINKERNEL_API btck_Block* BITCOINKERNEL_WARN_UNUSED_RESULT btck_block_copy(
     const btck_Block* block) BITCOINKERNEL_ARG_NONNULL(1);
+
+/**
+ * @brief Perform context-free validation checks on a block. This validates
+ * the block structure, transactions, proof-of-work, and merkle root without
+ * requiring validation state.
+ *
+ * @param[in] block             Non-null, block to validate.
+ * @param[in] consensus_params  Non-null, consensus parameters for validation.
+ * @param[in] check_pow         Whether to check proof-of-work.
+ * @param[in] check_merkle_root Whether to check merkle-root.
+ * @param[out] validation_state Non-null, will be set to the validation state.
+ * @return                      1 if the block passes validation, 0 otherwise.
+ */
+BITCOINKERNEL_API int BITCOINKERNEL_WARN_UNUSED_RESULT btck_block_check(
+    const btck_Block* block,
+    const btck_ConsensusParams* consensus_params,
+    bool check_pow,
+    bool check_merkle_root,
+    btck_BlockValidationState* validation_state) BITCOINKERNEL_ARG_NONNULL(1, 2, 5);
+
 
 /**
  * @brief Count the number of transactions contained in a block.
