@@ -957,7 +957,7 @@ void BlockManager::UpdateBlockInfo(const CBlock& block, unsigned int nHeight, co
     m_dirty_fileinfo.insert(nFile);
 }
 
-bool BlockManager::FindUndoPos(BlockValidationState& state, int nFile, FlatFilePos& pos, unsigned int nAddSize)
+util::Expected<void, std::string> BlockManager::FindUndoPos(int nFile, FlatFilePos& pos, unsigned int nAddSize)
 {
     AssertLockHeld(::cs_main);
     pos.nFile = nFile;
@@ -969,16 +969,16 @@ bool BlockManager::FindUndoPos(BlockValidationState& state, int nFile, FlatFileP
     bool out_of_space;
     size_t bytes_allocated = m_undo_file_seq.Allocate(pos, nAddSize, out_of_space);
     if (out_of_space) {
-        return FatalError(m_opts.notifications, state, _("Disk space is too low!"));
+        return FatalError(m_opts.notifications, _("Disk space is too low!"));
     }
     if (bytes_allocated != 0 && IsPruneMode()) {
         m_check_for_pruning = true;
     }
 
-    return true;
+    return {};
 }
 
-bool BlockManager::WriteBlockUndo(const CBlockUndo& blockundo, BlockValidationState& state, CBlockIndex& block)
+util::Expected<void, std::string> BlockManager::WriteBlockUndo(const CBlockUndo& blockundo, CBlockIndex& block)
 {
     AssertLockHeld(::cs_main);
     const BlockfileType type = BlockfileTypeForHeight(block.nHeight);
@@ -988,16 +988,16 @@ bool BlockManager::WriteBlockUndo(const CBlockUndo& blockundo, BlockValidationSt
     if (block.GetUndoPos().IsNull()) {
         FlatFilePos pos;
         const auto blockundo_size{static_cast<uint32_t>(GetSerializeSize(blockundo))};
-        if (!FindUndoPos(state, block.nFile, pos, blockundo_size + UNDO_DATA_DISK_OVERHEAD)) {
+        if (auto res{FindUndoPos(block.nFile, pos, blockundo_size + UNDO_DATA_DISK_OVERHEAD)}; !res) {
             LogError("FindUndoPos failed for %s while writing block undo", pos.ToString());
-            return false;
+            return res;
         }
 
         // Open history file to append
         AutoFile file{OpenUndoFile(pos)};
         if (file.IsNull()) {
             LogError("OpenUndoFile failed for %s while writing block undo", pos.ToString());
-            return FatalError(m_opts.notifications, state, _("Failed to write undo data."));
+            return FatalError(m_opts.notifications, _("Failed to write undo data."));
         }
         {
             BufferedWriter fileout{file};
@@ -1018,7 +1018,7 @@ bool BlockManager::WriteBlockUndo(const CBlockUndo& blockundo, BlockValidationSt
         // Make sure that the file is closed before we call `FlushUndoFile`.
         if (file.fclose() != 0) {
             LogError("Failed to close block undo file %s: %s", pos.ToString(), SysErrorString(errno));
-            return FatalError(m_opts.notifications, state, _("Failed to close block undo file."));
+            return FatalError(m_opts.notifications, _("Failed to close block undo file."));
         }
 
         // rev files are written in block height order, whereas blk files are written as blocks come in (often out of order)
@@ -1044,7 +1044,7 @@ bool BlockManager::WriteBlockUndo(const CBlockUndo& blockundo, BlockValidationSt
         m_dirty_blockindex.insert(&block);
     }
 
-    return true;
+    return {};
 }
 
 bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::optional<uint256>& expected_hash) const
