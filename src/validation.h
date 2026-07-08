@@ -744,6 +744,15 @@ public:
     //! Flush all changes to disk.
     void ForceFlushStateToDisk(bool wipe_cache = true);
 
+    //! Sync only the coins cache to disk, keeping it in memory.
+    //!
+    //! Unlike ForceFlushStateToDisk() this does not touch block/undo files or
+    //! the block index, and does not emit a ChainStateFlushed notification. It
+    //! is intended for read-only consumers (e.g. UTXO-set RPCs) that just need
+    //! the dirty coins written out before reading CoinsDB() directly, and that
+    //! do not advance the chain tip.
+    void SyncCoinsToDisk();
+
     //! Prune blockfiles from the disk if necessary and then flush chainstate changes
     //! if we pruned.
     void PruneAndFlush();
@@ -895,6 +904,38 @@ protected:
      * that it can be examined for issue diagnosis.
      */
     [[nodiscard]] util::Result<void> InvalidateCoinsDBOnDisk() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+private:
+    /**
+     * Determine which block files can be pruned.
+     *
+     * Has no effect unless pruning is enabled and either due
+     * (`m_check_for_pruning`) or manually requested via `manual_prune_height`.
+     * The first time anything is pruned this also records on disk that
+     * the block files are no longer complete.
+     *
+     * @param[in] manual_prune_height  prune up to this height instead
+     *                                 of the automatic target
+     * @returns the block file numbers that can be unlinked, empty if nothing
+     *          is prunable
+     */
+    std::set<int> FindBlockFilesToPrune(int manual_prune_height) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+    /**
+     * Flush block and undo files to disk, write the block index, and unlink
+     * any given pruned block files.
+     *
+     * @returns true unless a system error occurred
+     */
+    bool FlushBlockFilesToDisk(BlockValidationState& state, const std::set<int>& files_to_prune) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+    /**
+     * Write the coins cache to disk: sync it (keeping it in memory), or
+     * flush and empty it if `empty_cache` is set.
+     *
+     * @returns true unless a system error occurred
+     */
+    bool FlushCoinsCache(BlockValidationState& state, bool empty_cache) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     friend ChainstateManager;
 };

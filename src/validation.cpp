@@ -2704,6 +2704,100 @@ CoinsCacheSizeState Chainstate::GetCoinsCacheSizeState(
     return CoinsCacheSizeState::OK;
 }
 
+std::set<int> Chainstate::FindBlockFilesToPrune(int manual_prune_height)
+{
+    AssertLockHeld(::cs_main);
+    std::set<int> files_to_prune;
+    if (m_blockman.IsPruneMode() && (m_blockman.m_check_for_pruning || manual_prune_height > 0) && m_chainman.m_blockman.m_blockfiles_indexed) {
+        // make sure we don't prune above any of the prune locks bestblocks
+        // pruning is height-based
+        int last_prune{m_chain.Height()}; // last height we can prune
+        std::optional<std::string> limiting_lock; // prune lock that actually was the limiting factor, only used for logging
+
+        for (const auto& prune_lock : m_blockman.m_prune_locks) {
+            if (prune_lock.second.height_first == std::numeric_limits<int>::max()) continue;
+            // Remove the buffer and one additional block here to get actual height that is outside of the buffer
+            const int lock_height{prune_lock.second.height_first - PRUNE_LOCK_BUFFER - 1};
+            last_prune = std::max(1, std::min(last_prune, lock_height));
+            if (last_prune == lock_height) {
+                limiting_lock = prune_lock.first;
+            }
+        }
+
+        if (limiting_lock) {
+            LogDebug(BCLog::PRUNE, "%s limited pruning to height %d\n", limiting_lock.value(), last_prune);
+        }
+
+        if (manual_prune_height > 0) {
+            LOG_TIME_MILLIS_WITH_CATEGORY("find files to prune (manual)", BCLog::BENCH);
+
+            m_blockman.FindFilesToPruneManual(
+                files_to_prune,
+                std::min(last_prune, manual_prune_height),
+                *this);
+        } else {
+            LOG_TIME_MILLIS_WITH_CATEGORY("find files to prune", BCLog::BENCH);
+
+            m_blockman.FindFilesToPrune(files_to_prune, last_prune, *this, m_chainman);
+            m_blockman.m_check_for_pruning = false;
+        }
+        if (!files_to_prune.empty() && !m_blockman.m_have_pruned) {
+            m_blockman.m_block_tree_db->WriteFlag("prunedblockfiles", true);
+            m_blockman.m_have_pruned = true;
+        }
+    }
+    return files_to_prune;
+}
+
+bool Chainstate::FlushBlockFilesToDisk(BlockValidationState& state, const std::set<int>& files_to_prune)
+{
+    AssertLockHeld(::cs_main);
+    // Ensure we can write block index
+    if (!CheckDiskSpace(m_blockman.m_opts.blocks_dir)) {
+        return FatalError(m_chainman.GetNotifications(), state, _("Disk space is too low!"));
+    }
+    {
+        LOG_TIME_MILLIS_WITH_CATEGORY("write block and undo data to disk", BCLog::BENCH);
+
+        // First make sure all block and undo data is flushed to disk.
+        // TODO: Handle return error, or add detailed comment why it is
+        // safe to not return an error upon failure.
+        if (!m_blockman.FlushChainstateBlockFile(m_chain.Height())) {
+            LogWarning("%s: Failed to flush block file.\n", __func__);
+        }
+    }
+
+    // Then update all block file information (which may refer to block and undo files).
+    {
+        LOG_TIME_MILLIS_WITH_CATEGORY("write block index to disk", BCLog::BENCH);
+
+        m_blockman.WriteBlockIndexDB();
+    }
+    // Finally remove any pruned files
+    if (!files_to_prune.empty()) {
+        LOG_TIME_MILLIS_WITH_CATEGORY("unlink pruned files", BCLog::BENCH);
+
+        m_blockman.UnlinkPrunedFiles(files_to_prune);
+    }
+    return true;
+}
+
+bool Chainstate::FlushCoinsCache(BlockValidationState& state, bool empty_cache)
+{
+    AssertLockHeld(::cs_main);
+    // Typical Coin structures on disk are around 48 bytes in size.
+    // Pushing a new one to the database can cause it to be written
+    // twice (once in the log, and once in the tables). This is already
+    // an overestimation, as most will delete an existing entry or
+    // overwrite one. Still, use a conservative safety factor of 2.
+    if (!CheckDiskSpace(m_chainman.m_options.datadir, 48 * 2 * 2 * CoinsTip().GetDirtyCount())) {
+        return FatalError(m_chainman.GetNotifications(), state, _("Disk space is too low!"));
+    }
+    // Flush the chainstate (which may refer to block index entries).
+    empty_cache ? CoinsTip().Flush() : CoinsTip().Sync();
+    return true;
+}
+
 bool Chainstate::FlushStateToDisk(
     BlockValidationState &state,
     FlushStateMode mode,
@@ -2711,7 +2805,6 @@ bool Chainstate::FlushStateToDisk(
 {
     LOCK(cs_main);
     assert(this->CanFlushToDisk());
-    std::set<int> setFilesToPrune;
     bool full_flush_completed = false;
 
     [[maybe_unused]] const size_t coins_count{CoinsTip().GetCacheSize()};
@@ -2719,50 +2812,9 @@ bool Chainstate::FlushStateToDisk(
 
     try {
     {
-        bool fFlushForPrune = false;
-
         CoinsCacheSizeState cache_state = GetCoinsCacheSizeState();
-        if (m_blockman.IsPruneMode() && (m_blockman.m_check_for_pruning || nManualPruneHeight > 0) && m_chainman.m_blockman.m_blockfiles_indexed) {
-            // make sure we don't prune above any of the prune locks bestblocks
-            // pruning is height-based
-            int last_prune{m_chain.Height()}; // last height we can prune
-            std::optional<std::string> limiting_lock; // prune lock that actually was the limiting factor, only used for logging
-
-            for (const auto& prune_lock : m_blockman.m_prune_locks) {
-                if (prune_lock.second.height_first == std::numeric_limits<int>::max()) continue;
-                // Remove the buffer and one additional block here to get actual height that is outside of the buffer
-                const int lock_height{prune_lock.second.height_first - PRUNE_LOCK_BUFFER - 1};
-                last_prune = std::max(1, std::min(last_prune, lock_height));
-                if (last_prune == lock_height) {
-                    limiting_lock = prune_lock.first;
-                }
-            }
-
-            if (limiting_lock) {
-                LogDebug(BCLog::PRUNE, "%s limited pruning to height %d\n", limiting_lock.value(), last_prune);
-            }
-
-            if (nManualPruneHeight > 0) {
-                LOG_TIME_MILLIS_WITH_CATEGORY("find files to prune (manual)", BCLog::BENCH);
-
-                m_blockman.FindFilesToPruneManual(
-                    setFilesToPrune,
-                    std::min(last_prune, nManualPruneHeight),
-                    *this);
-            } else {
-                LOG_TIME_MILLIS_WITH_CATEGORY("find files to prune", BCLog::BENCH);
-
-                m_blockman.FindFilesToPrune(setFilesToPrune, last_prune, *this, m_chainman);
-                m_blockman.m_check_for_pruning = false;
-            }
-            if (!setFilesToPrune.empty()) {
-                fFlushForPrune = true;
-                if (!m_blockman.m_have_pruned) {
-                    m_blockman.m_block_tree_db->WriteFlag("prunedblockfiles", true);
-                    m_blockman.m_have_pruned = true;
-                }
-            }
-        }
+        const std::set<int> files_to_prune{FindBlockFilesToPrune(nManualPruneHeight)};
+        const bool fFlushForPrune{!files_to_prune.empty()};
         const auto nNow{NodeClock::now()};
         // The cache is large and we're within 10% and 10 MiB of the limit, but we have time now (not in the middle of a block processing).
         bool fCacheLarge = mode == FlushStateMode::PERIODIC && cache_state >= CoinsCacheSizeState::LARGE;
@@ -2778,45 +2830,14 @@ bool Chainstate::FlushStateToDisk(
             LogDebug(BCLog::COINDB, "Writing chainstate to disk: flush mode=%s, prune=%d, large=%d, critical=%d, periodic=%d",
                      FlushStateModeNames[size_t(mode)], fFlushForPrune, fCacheLarge, fCacheCritical, fPeriodicWrite);
 
-            // Ensure we can write block index
-            if (!CheckDiskSpace(m_blockman.m_opts.blocks_dir)) {
-                return FatalError(m_chainman.GetNotifications(), state, _("Disk space is too low!"));
-            }
-            {
-                LOG_TIME_MILLIS_WITH_CATEGORY("write block and undo data to disk", BCLog::BENCH);
-
-                // First make sure all block and undo data is flushed to disk.
-                // TODO: Handle return error, or add detailed comment why it is
-                // safe to not return an error upon failure.
-                if (!m_blockman.FlushChainstateBlockFile(m_chain.Height())) {
-                    LogWarning("%s: Failed to flush block file.\n", __func__);
-                }
-            }
-
-            // Then update all block file information (which may refer to block and undo files).
-            {
-                LOG_TIME_MILLIS_WITH_CATEGORY("write block index to disk", BCLog::BENCH);
-
-                m_blockman.WriteBlockIndexDB();
-            }
-            // Finally remove any pruned files
-            if (fFlushForPrune) {
-                LOG_TIME_MILLIS_WITH_CATEGORY("unlink pruned files", BCLog::BENCH);
-
-                m_blockman.UnlinkPrunedFiles(setFilesToPrune);
+            if (!FlushBlockFilesToDisk(state, files_to_prune)) {
+                return false;
             }
 
             if (!CoinsTip().GetBestBlock().IsNull()) {
-                // Typical Coin structures on disk are around 48 bytes in size.
-                // Pushing a new one to the database can cause it to be written
-                // twice (once in the log, and once in the tables). This is already
-                // an overestimation, as most will delete an existing entry or
-                // overwrite one. Still, use a conservative safety factor of 2.
-                if (!CheckDiskSpace(m_chainman.m_options.datadir, 48 * 2 * 2 * CoinsTip().GetDirtyCount())) {
-                    return FatalError(m_chainman.GetNotifications(), state, _("Disk space is too low!"));
+                if (!FlushCoinsCache(state, empty_cache)) {
+                    return false;
                 }
-                // Flush the chainstate (which may refer to block index entries).
-                empty_cache ? CoinsTip().Flush() : CoinsTip().Sync();
                 full_flush_completed = true;
                 TRACEPOINT(utxocache, flush,
                     int64_t{Ticks<std::chrono::microseconds>(NodeClock::now() - nNow)},
@@ -2857,6 +2878,20 @@ void Chainstate::ForceFlushStateToDisk(bool wipe_cache)
     BlockValidationState state;
     if (!this->FlushStateToDisk(state, wipe_cache ? FlushStateMode::FORCE_FLUSH : FlushStateMode::FORCE_SYNC)) {
         LogWarning("Failed to force flush state (%s)", state.ToString());
+    }
+}
+
+void Chainstate::SyncCoinsToDisk()
+{
+    LOCK(cs_main);
+    assert(this->CanFlushToDisk());
+    // Nothing has been validated yet (fresh datadir); there are no coins to sync.
+    if (CoinsTip().GetBestBlock().IsNull()) return;
+    BlockValidationState state;
+    // FlushCoinsCache() already raises a fatal error notification on failure;
+    // the warning here mirrors ForceFlushStateToDisk()'s reporting.
+    if (!FlushCoinsCache(state, /*empty_cache=*/false)) {
+        LogWarning("Failed to sync coins to disk (%s)", state.ToString());
     }
 }
 

@@ -1081,7 +1081,7 @@ static RPCMethod gettxoutsetinfo()
     NodeContext& node = EnsureAnyNodeContext(request.context);
     ChainstateManager& chainman = EnsureChainman(node);
     Chainstate& active_chainstate = chainman.ActiveChainstate();
-    active_chainstate.ForceFlushStateToDisk(/*wipe_cache=*/false);
+    active_chainstate.SyncCoinsToDisk();
 
     CCoinsView* coins_view;
     BlockManager* blockman;
@@ -2445,7 +2445,7 @@ static RPCMethod scantxoutset()
             ChainstateManager& chainman = EnsureChainman(node);
             LOCK(cs_main);
             Chainstate& active_chainstate = chainman.ActiveChainstate();
-            active_chainstate.ForceFlushStateToDisk(/*wipe_cache=*/false);
+            active_chainstate.SyncCoinsToDisk();
             pcursor = CHECK_NONFATAL(active_chainstate.CoinsDB().Cursor());
             tip = CHECK_NONFATAL(active_chainstate.m_chain.Tip());
         }
@@ -3251,7 +3251,7 @@ UniValue CreateRolledBackUTXOSnapshot(
         {
             LOCK(::cs_main);
             tip = chainstate.m_chain.Tip();
-            chainstate.ForceFlushStateToDisk(/*wipe_cache=*/false);
+            chainstate.SyncCoinsToDisk();
             cursor = chainstate.CoinsDB().Cursor();
         }
         temp_cache.SetBestBlock(tip->GetBlockHash());
@@ -3372,7 +3372,7 @@ PrepareUTXOSnapshot(
         //
         AssertLockHeld(::cs_main);
 
-        chainstate.ForceFlushStateToDisk(/*wipe_cache=*/false);
+        chainstate.SyncCoinsToDisk();
 
         maybe_stats = GetUTXOStats(&chainstate.CoinsDB(), chainstate.m_blockman, CoinStatsHashType::HASH_SERIALIZED, interruption_point);
         if (!maybe_stats) {
