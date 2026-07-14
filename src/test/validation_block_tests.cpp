@@ -9,6 +9,8 @@
 #include <consensus/validation.h>
 #include <interfaces/mining.h>
 #include <node/blockstorage.h>
+#include <node/kernel_notifications.h>
+#include <node/miner.h>
 #include <pow.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
@@ -18,6 +20,7 @@
 #include <test/util/common.h>
 #include <test/util/script.h>
 #include <test/util/setup_common.h>
+#include <test/util/time.h>
 #include <txmempool.h>
 #include <uint256.h>
 #include <util/check.h>
@@ -28,7 +31,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <thread>
 #include <utility>
@@ -47,6 +52,101 @@ struct MinerTestingSetup : public RegTestingSetup {
 } // namespace validation_block_tests
 
 BOOST_FIXTURE_TEST_SUITE(validation_block_tests, MinerTestingSetup)
+
+namespace {
+enum class FatalSubmissionFailure { BLOCK_WRITE, UNDO_WRITE, AFTER_CHECK };
+
+void TestFatalBlockSubmission(MinerTestingSetup& setup, FatalSubmissionFailure failure)
+{
+    auto& node{setup.m_node};
+    FakeNodeClock clock{};
+    auto& chainman{*node.chainman};
+    auto block{setup.GoodBlock(chainman.GetParams().GenesisBlock().GetHash())};
+    node.notifications->m_shutdown_on_fatal_error = false;
+
+    // Restore the block files before the testing setup flushes its chainstate.
+    struct FileObstruction {
+        fs::path path;
+        fs::path backup;
+        bool obstructed{false};
+        bool had_file{false};
+
+        void Obstruct(bool replace_with_directory)
+        {
+            had_file = fs::exists(path);
+            if (had_file) fs::rename(path, backup);
+            obstructed = true;
+            if (replace_with_directory) fs::create_directory(path);
+        }
+        ~FileObstruction()
+        {
+            if (!obstructed) return;
+            fs::remove(path);
+            if (had_file) fs::rename(backup, path);
+        }
+    } obstruction;
+
+    const auto blocks_dir{chainman.m_blockman.GetBlockPosFilename(FlatFilePos{0, 0}).parent_path()};
+    obstruction.path = failure == FatalSubmissionFailure::AFTER_CHECK ? blocks_dir :
+        blocks_dir / (failure == FatalSubmissionFailure::BLOCK_WRITE ? "blk00000.dat" : "rev00000.dat");
+    obstruction.backup = obstruction.path + ".backup";
+
+    struct Subscriber final : CValidationInterface {
+        int calls{0};
+        std::optional<std::string> error;
+        std::function<void()> on_valid;
+
+        void BlockChecked(const std::shared_ptr<const CBlock>&, const util::Expected<BlockValidationState, kernel::FatalError>& result) override
+        {
+            ++calls;
+            if (!result) error = result.error().message();
+            if (result && result->IsValid() && on_valid) on_valid();
+        }
+    };
+    auto subscriber{std::make_shared<Subscriber>()};
+    if (failure == FatalSubmissionFailure::AFTER_CHECK) {
+        // Force the periodic flush after connection to fail, after BlockChecked
+        // has already reported a valid block.
+        clock += 71min;
+        subscriber->on_valid = [&] { obstruction.Obstruct(/*replace_with_directory=*/false); };
+    } else {
+        obstruction.Obstruct(/*replace_with_directory=*/true);
+    }
+    node.validation_signals->RegisterSharedValidationInterface(subscriber);
+    std::string reason, debug;
+    const bool accepted{node::SubmitBlock(chainman, block, reason, debug)};
+    node.validation_signals->UnregisterSharedValidationInterface(subscriber);
+
+    BOOST_CHECK(!accepted);
+    BOOST_CHECK_EQUAL(subscriber->calls, 1);
+    BOOST_CHECK(debug.empty());
+    if (failure == FatalSubmissionFailure::AFTER_CHECK) {
+        BOOST_CHECK(!subscriber->error);
+        BOOST_CHECK_EQUAL(reason, "inconclusive");
+    } else {
+        BOOST_REQUIRE(subscriber->error);
+        const std::string expected{failure == FatalSubmissionFailure::BLOCK_WRITE ?
+            "AcceptBlock: Failed to find position to write new block to disk" : "Failed to write undo data."};
+        BOOST_CHECK_EQUAL(*subscriber->error, expected);
+        BOOST_CHECK_EQUAL(reason, expected);
+    }
+}
+} // namespace
+
+BOOST_AUTO_TEST_CASE(submit_block_write_failure)
+{
+    TestFatalBlockSubmission(*this, FatalSubmissionFailure::BLOCK_WRITE);
+}
+
+BOOST_AUTO_TEST_CASE(submit_block_undo_failure)
+{
+    TestFatalBlockSubmission(*this, FatalSubmissionFailure::UNDO_WRITE);
+}
+
+BOOST_AUTO_TEST_CASE(submit_block_flush_failure)
+{
+    TestFatalBlockSubmission(*this, FatalSubmissionFailure::AFTER_CHECK);
+}
 
 struct TestSubscriber final : public CValidationInterface {
     uint256 m_expected_tip;
