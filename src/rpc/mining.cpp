@@ -21,6 +21,7 @@
 #include <core_io.h>
 #include <crypto/hex_base.h>
 #include <interfaces/types.h>
+#include <kernel/fatal_error.h>
 #include <key_io.h>
 #include <net.h>
 #include <netbase.h>
@@ -54,6 +55,7 @@
 #include <univalue.h>
 #include <util/chaintype.h>
 #include <util/check.h>
+#include <util/expected.h>
 #include <util/signalinterrupt.h>
 #include <util/strencodings.h>
 #include <util/string.h>
@@ -185,7 +187,7 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t&
 
     if (!process_new_block) return true;
 
-    if (!chainman.ProcessNewBlock(block_out, /*force_processing=*/true, /*min_pow_checked=*/true, nullptr)) {
+    if (auto res{chainman.ProcessNewBlock(block_out, /*force_processing=*/true, /*min_pow_checked=*/true, nullptr)}; !res || !*res) {
         throw JSONRPCError(RPC_INTERNAL_ERROR, "ProcessNewBlock, block not accepted");
     }
 
@@ -420,8 +422,14 @@ static RPCMethod generateblock()
         block.vtx.insert(block.vtx.end(), txs.begin(), txs.end());
         RegenerateCommitments(block, chainman);
 
-        if (BlockValidationState state{TestBlockValidity(chainman.ActiveChainstate(), block, /*check_pow=*/false, /*check_merkle_root=*/false)}; !state.IsValid()) {
-            throw JSONRPCError(RPC_VERIFY_ERROR, strprintf("TestBlockValidity failed: %s", state.ToString()));
+        auto res{TestBlockValidity(chainman.ActiveChainstate(), block, /*check_pow=*/false, /*check_merkle_root=*/false)};
+        if (!res) {
+            throw JSONRPCError(RPC_VERIFY_ERROR, strprintf("TestBlockValidity failed: %s", res.error().message()));
+        }
+
+        // Consensus reject reason - block invalid
+        if (!res->IsValid()) {
+            throw JSONRPCError(RPC_VERIFY_ERROR, strprintf("TestBlockValidity failed: %s", res->ToString()));
         }
     }
 
@@ -781,7 +789,12 @@ static RPCMethod getblocktemplate()
                 return "duplicate-inconclusive";
             }
 
-            return BIP22ValidationResult(TestBlockValidity(chainman.ActiveChainstate(), block, /*check_pow=*/false, /*check_merkle_root=*/true));
+            auto res{TestBlockValidity(chainman.ActiveChainstate(), block, /*check_pow=*/false, /*check_merkle_root=*/true)};
+            if (!res) {
+                throw JSONRPCError(RPC_VERIFY_ERROR, res.error().message());
+            }
+
+            return BIP22ValidationResult(*res);
         }
 
         const UniValue& aClientRules = oparam.find_value("rules");
@@ -1077,12 +1090,15 @@ public:
 
     explicit submitblock_StateCatcher(const uint256 &hashIn) : hash(hashIn), state() {}
 
+    std::optional<std::string> error;
+
 protected:
-    void BlockChecked(const std::shared_ptr<const CBlock>& block, const BlockValidationState& stateIn) override
+    void BlockChecked(const std::shared_ptr<const CBlock>& block, const util::Expected<BlockValidationState, kernel::FatalError>& stateIn) override
     {
         if (block->GetHash() != hash) return;
         found = true;
-        state = stateIn;
+        error = stateIn ? std::nullopt : std::make_optional(stateIn.error().message());
+        if (stateIn) state = *stateIn;
     }
 };
 
@@ -1126,13 +1142,17 @@ static RPCMethod submitblock()
     bool new_block;
     auto sc = std::make_shared<submitblock_StateCatcher>(block.GetHash());
     CHECK_NONFATAL(chainman.m_options.signals)->RegisterSharedValidationInterface(sc);
-    bool accepted = chainman.ProcessNewBlock(blockptr, /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/&new_block);
+    auto res{chainman.ProcessNewBlock(blockptr, /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/&new_block)};
+    bool accepted = res && *res;
     CHECK_NONFATAL(chainman.m_options.signals)->UnregisterSharedValidationInterface(sc);
     if (!new_block && accepted) {
         return "duplicate";
     }
     if (!sc->found) {
         return "inconclusive";
+    }
+    if (sc->error) {
+        throw JSONRPCError(RPC_VERIFY_ERROR, *sc->error);
     }
     return BIP22ValidationResult(sc->state);
 },

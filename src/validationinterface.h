@@ -6,7 +6,9 @@
 #ifndef BITCOIN_VALIDATIONINTERFACE_H
 #define BITCOIN_VALIDATIONINTERFACE_H
 
+#include <consensus/validation.h>
 #include <kernel/cs_main.h>
+#include <kernel/fatal_error.h>
 #include <primitives/transaction.h>
 #include <sync.h>
 #include <uint256.h>
@@ -24,7 +26,6 @@ namespace util {
 class TaskRunnerInterface;
 } // namespace util
 
-class BlockValidationState;
 class CBlock;
 class CBlockIndex;
 struct CBlockLocator;
@@ -150,12 +151,13 @@ protected:
      */
     virtual void ChainStateFlushed(const kernel::ChainstateRole& role, const CBlockLocator& locator) {}
     /**
-     * Notifies listeners of a block validation result.
+     * Notifies listeners of a block validation result or a fatal processing error.
+     * A fatal error has already been reported through Notifications::fatalError.
      * If the provided BlockValidationState IsValid, the provided block
      * is guaranteed to be the current best block at the time the
      * callback was generated (not necessarily now).
      */
-    virtual void BlockChecked(const std::shared_ptr<const CBlock>&, const BlockValidationState&) {}
+    virtual void BlockChecked(const std::shared_ptr<const CBlock>&, const util::Expected<BlockValidationState, kernel::FatalError>&) {}
     /**
      * Notifies listeners that a block which builds directly on our current tip
      * has been received and connected to the headers tree, though not validated yet.
@@ -229,7 +231,7 @@ public:
     void BlockConnected(const kernel::ChainstateRole&, std::shared_ptr<const CBlock>, const CBlockIndex* pindex);
     void BlockDisconnected(std::shared_ptr<const CBlock>, const CBlockIndex* pindex);
     void ChainStateFlushed(const kernel::ChainstateRole&, const CBlockLocator&);
-    void BlockChecked(const std::shared_ptr<const CBlock>&, const BlockValidationState&);
+    void BlockChecked(const std::shared_ptr<const CBlock>&, const util::Expected<BlockValidationState, kernel::FatalError>&);
     void NewPoWValidBlock(const CBlockIndex *, const std::shared_ptr<const CBlock>&);
 };
 

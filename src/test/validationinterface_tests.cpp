@@ -16,7 +16,7 @@
 BOOST_FIXTURE_TEST_SUITE(validationinterface_tests, ChainTestingSetup)
 
 struct TestSubscriberNoop final : public CValidationInterface {
-    void BlockChecked(const std::shared_ptr<const CBlock>&, const BlockValidationState&) override {}
+    void BlockChecked(const std::shared_ptr<const CBlock>&, const util::Expected<BlockValidationState, kernel::FatalError>&) override {}
 };
 
 BOOST_AUTO_TEST_CASE(unregister_validation_interface_race)
@@ -59,7 +59,7 @@ public:
     {
         if (m_on_destroy) m_on_destroy();
     }
-    void BlockChecked(const std::shared_ptr<const CBlock>& block, const BlockValidationState& state) override
+    void BlockChecked(const std::shared_ptr<const CBlock>& block, const util::Expected<BlockValidationState, kernel::FatalError>& state) override
     {
         if (m_on_call) m_on_call();
     }

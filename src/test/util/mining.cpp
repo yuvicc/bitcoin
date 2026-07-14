@@ -133,10 +133,10 @@ struct BlockValidationStateCatcher : public CValidationInterface {
           m_state{} {}
 
 protected:
-    void BlockChecked(const std::shared_ptr<const CBlock>& block, const BlockValidationState& state) override
+    void BlockChecked(const std::shared_ptr<const CBlock>& block, const util::Expected<BlockValidationState, kernel::FatalError>& state) override
     {
         if (block->GetHash() != m_hash) return;
-        m_state = state;
+        m_state = *Assert(state);
     }
 };
 
@@ -157,7 +157,8 @@ COutPoint ProcessBlock(const NodeContext& node, const std::shared_ptr<CBlock>& b
     bool new_block;
     BlockValidationStateCatcher bvsc{block->GetHash()};
     node.validation_signals->RegisterValidationInterface(&bvsc);
-    const bool processed{chainman.ProcessNewBlock(block, true, true, &new_block)};
+    auto res{chainman.ProcessNewBlock(block, true, true, &new_block)};
+    const bool processed{res && *res};
     const bool duplicate{!new_block && processed};
     assert(!duplicate);
     node.validation_signals->UnregisterValidationInterface(&bvsc);

@@ -265,10 +265,10 @@ void ValidationSignals::ChainStateFlushed(const ChainstateRole& role, const CBlo
     ENQUEUE_AND_LOG_EVENT(std::move(event), std::move(log_msg));
 }
 
-void ValidationSignals::BlockChecked(const std::shared_ptr<const CBlock>& block, const BlockValidationState& state)
+void ValidationSignals::BlockChecked(const std::shared_ptr<const CBlock>& block, const util::Expected<BlockValidationState, kernel::FatalError>& state)
 {
     LOG_EVENT("%s: block hash=%s state=%s", __func__,
-              block->GetHash().ToString(), state.ToString());
+              block->GetHash().ToString(), state ? state->ToString() : state.error().message());
     m_internals->Iterate([&](CValidationInterface& callbacks) { callbacks.BlockChecked(block, state); });
 }
 
