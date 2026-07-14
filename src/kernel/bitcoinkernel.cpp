@@ -355,16 +355,11 @@ public:
 protected:
     void BlockChecked(const std::shared_ptr<const CBlock>& block, const util::Expected<BlockValidationState, kernel::FatalError>& stateIn) override
     {
-        BlockValidationState state;
-        if (stateIn) {
-            state = *stateIn;
-        } else {
-            state.Error(stateIn.error().message());
-        }
-        if (m_cbs.block_checked) {
+        // Fatal failures are reported through the kernel's fatal_error notification.
+        if (m_cbs.block_checked && stateIn) {
             m_cbs.block_checked(m_cbs.user_data,
                                 btck_Block::copy(btck_Block::ref(&block)),
-                                btck_BlockValidationState::ref(&state));
+                                btck_BlockValidationState::ref(&*stateIn));
         }
     }
 

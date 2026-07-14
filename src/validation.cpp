@@ -5062,7 +5062,7 @@ void ChainstateManager::LoadExternalBlockFile(
                         nRewind = blkdat.GetPos();
 
                         auto res{AcceptBlock(pblock, nullptr, true, dbp, nullptr, true)};
-                        if (!res || res->IsError()) break;
+                        if (!res) break;
                         if (res->IsValid()) {
                             nLoaded++;
                         }

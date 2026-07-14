@@ -630,8 +630,6 @@ static UniValue BIP22ValidationResult(const BlockValidationState& state)
     if (state.IsValid())
         return UniValue::VNULL;
 
-    if (state.IsError())
-        throw JSONRPCError(RPC_VERIFY_ERROR, state.ToString());
     if (state.IsInvalid())
     {
         std::string strRejectReason = state.GetRejectReason();
@@ -1189,11 +1187,7 @@ static RPCMethod submitheader()
     }
 
     BlockValidationState state;
-    chainman.ProcessNewBlockHeaders({{h}}, /*min_pow_checked=*/true, state);
-    if (state.IsValid()) return UniValue::VNULL;
-    if (state.IsError()) {
-        throw JSONRPCError(RPC_VERIFY_ERROR, state.ToString());
-    }
+    if (chainman.ProcessNewBlockHeaders({{h}}, /*min_pow_checked=*/true, state)) return UniValue::VNULL;
     throw JSONRPCError(RPC_VERIFY_ERROR, state.GetRejectReason());
 },
     };
