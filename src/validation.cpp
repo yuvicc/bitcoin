@@ -2755,6 +2755,39 @@ std::set<int> Chainstate::FindBlockFilesToPrune(int manual_prune_height)
     return files_to_prune;
 }
 
+bool Chainstate::FlushBlockFilesToDisk(BlockValidationState& state, const std::set<int>& files_to_prune)
+{
+    AssertLockHeld(::cs_main);
+    // Ensure we can write block index
+    if (!CheckDiskSpace(m_blockman.m_opts.blocks_dir)) {
+        return FatalError(m_chainman.GetNotifications(), state, _("Disk space is too low!"));
+    }
+    {
+        LOG_TIME_MILLIS_WITH_CATEGORY("write block and undo data to disk", BCLog::BENCH);
+
+        // First make sure all block and undo data is flushed to disk.
+        // TODO: Handle return error, or add detailed comment why it is
+        // safe to not return an error upon failure.
+        if (!m_blockman.FlushChainstateBlockFile(m_chain.Height())) {
+            LogWarning("%s: Failed to flush block file.\n", __func__);
+        }
+    }
+
+    // Then update all block file information (which may refer to block and undo files).
+    {
+        LOG_TIME_MILLIS_WITH_CATEGORY("write block index to disk", BCLog::BENCH);
+
+        m_blockman.WriteBlockIndexDB();
+    }
+    // Finally remove any pruned files
+    if (!files_to_prune.empty()) {
+        LOG_TIME_MILLIS_WITH_CATEGORY("unlink pruned files", BCLog::BENCH);
+
+        m_blockman.UnlinkPrunedFiles(files_to_prune);
+    }
+    return true;
+}
+
 bool Chainstate::FlushStateToDisk(
     BlockValidationState &state,
     FlushStateMode mode,
@@ -2787,32 +2820,8 @@ bool Chainstate::FlushStateToDisk(
             LogDebug(BCLog::COINDB, "Writing chainstate to disk: flush mode=%s, prune=%d, large=%d, critical=%d, periodic=%d",
                      FlushStateModeNames[size_t(mode)], fFlushForPrune, fCacheLarge, fCacheCritical, fPeriodicWrite);
 
-            // Ensure we can write block index
-            if (!CheckDiskSpace(m_blockman.m_opts.blocks_dir)) {
-                return FatalError(m_chainman.GetNotifications(), state, _("Disk space is too low!"));
-            }
-            {
-                LOG_TIME_MILLIS_WITH_CATEGORY("write block and undo data to disk", BCLog::BENCH);
-
-                // First make sure all block and undo data is flushed to disk.
-                // TODO: Handle return error, or add detailed comment why it is
-                // safe to not return an error upon failure.
-                if (!m_blockman.FlushChainstateBlockFile(m_chain.Height())) {
-                    LogWarning("%s: Failed to flush block file.\n", __func__);
-                }
-            }
-
-            // Then update all block file information (which may refer to block and undo files).
-            {
-                LOG_TIME_MILLIS_WITH_CATEGORY("write block index to disk", BCLog::BENCH);
-
-                m_blockman.WriteBlockIndexDB();
-            }
-            // Finally remove any pruned files
-            if (fFlushForPrune) {
-                LOG_TIME_MILLIS_WITH_CATEGORY("unlink pruned files", BCLog::BENCH);
-
-                m_blockman.UnlinkPrunedFiles(files_to_prune);
+            if (!FlushBlockFilesToDisk(state, files_to_prune)) {
+                return false;
             }
 
             if (!CoinsTip().GetBestBlock().IsNull()) {

@@ -914,6 +914,14 @@ private:
      */
     std::set<int> FindBlockFilesToPrune(int manual_prune_height) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
+    /**
+     * Flush block and undo files to disk, write the block index, and unlink
+     * any given pruned block files.
+     *
+     * @returns true unless a system error occurred
+     */
+    bool FlushBlockFilesToDisk(BlockValidationState& state, const std::set<int>& files_to_prune) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
     friend ChainstateManager;
 };
 
