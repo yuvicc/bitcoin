@@ -901,6 +901,19 @@ protected:
      */
     [[nodiscard]] util::Result<void> InvalidateCoinsDBOnDisk() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
+private:
+    /**
+     * Determine which block files can be pruned.
+     *
+     * Has no effect unless pruning is enabled and either due
+     * (`m_check_for_pruning`) or manually requested via `manual_prune_height`.
+     *
+     * @param[in] manual_prune_height  prune up to this height
+     * @returns the block file numbers that can be unlinked, empty if nothing
+     *          is prunable
+     */
+    std::set<int> FindBlockFilesToPrune(int manual_prune_height) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
     friend ChainstateManager;
 };
 

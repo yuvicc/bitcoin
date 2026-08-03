@@ -2710,6 +2710,51 @@ CoinsCacheSizeState Chainstate::GetCoinsCacheSizeState(
     return CoinsCacheSizeState::OK;
 }
 
+std::set<int> Chainstate::FindBlockFilesToPrune(int manual_prune_height)
+{
+    AssertLockHeld(::cs_main);
+    std::set<int> files_to_prune;
+    if (m_blockman.IsPruneMode() && (m_blockman.m_check_for_pruning || manual_prune_height > 0) && m_chainman.m_blockman.m_blockfiles_indexed) {
+        // make sure we don't prune above any of the prune locks bestblocks
+        // pruning is height-based
+        int last_prune{m_chain.Height()}; // last height we can prune
+        std::optional<std::string> limiting_lock; // prune lock that actually was the limiting factor, only used for logging
+
+        for (const auto& prune_lock : m_blockman.m_prune_locks) {
+            if (prune_lock.second.height_first == std::numeric_limits<int>::max()) continue;
+            // Remove the buffer and one additional block here to get actual height that is outside of the buffer
+            const int lock_height{prune_lock.second.height_first - PRUNE_LOCK_BUFFER - 1};
+            last_prune = std::max(1, std::min(last_prune, lock_height));
+            if (last_prune == lock_height) {
+                limiting_lock = prune_lock.first;
+            }
+        }
+
+        if (limiting_lock) {
+            LogDebug(BCLog::PRUNE, "%s limited pruning to height %d\n", limiting_lock.value(), last_prune);
+        }
+
+        if (manual_prune_height > 0) {
+            LOG_TIME_MILLIS_WITH_CATEGORY("find files to prune (manual)", BCLog::BENCH);
+
+            m_blockman.FindFilesToPruneManual(
+                files_to_prune,
+                std::min(last_prune, manual_prune_height),
+                *this);
+        } else {
+            LOG_TIME_MILLIS_WITH_CATEGORY("find files to prune", BCLog::BENCH);
+
+            m_blockman.FindFilesToPrune(files_to_prune, last_prune, *this, m_chainman);
+            m_blockman.m_check_for_pruning = false;
+        }
+        if (!files_to_prune.empty() && !m_blockman.m_have_pruned) {
+            m_blockman.m_block_tree_db->WriteFlag("prunedblockfiles", true);
+            m_blockman.m_have_pruned = true;
+        }
+    }
+    return files_to_prune;
+}
+
 bool Chainstate::FlushStateToDisk(
     BlockValidationState &state,
     FlushStateMode mode,
@@ -2717,7 +2762,6 @@ bool Chainstate::FlushStateToDisk(
 {
     LOCK(cs_main);
     assert(this->CanFlushToDisk());
-    std::set<int> setFilesToPrune;
     bool full_flush_completed = false;
 
     [[maybe_unused]] const size_t coins_count{CoinsTip().GetCacheSize()};
@@ -2725,50 +2769,9 @@ bool Chainstate::FlushStateToDisk(
 
     try {
     {
-        bool fFlushForPrune = false;
-
         CoinsCacheSizeState cache_state = GetCoinsCacheSizeState();
-        if (m_blockman.IsPruneMode() && (m_blockman.m_check_for_pruning || nManualPruneHeight > 0) && m_chainman.m_blockman.m_blockfiles_indexed) {
-            // make sure we don't prune above any of the prune locks bestblocks
-            // pruning is height-based
-            int last_prune{m_chain.Height()}; // last height we can prune
-            std::optional<std::string> limiting_lock; // prune lock that actually was the limiting factor, only used for logging
-
-            for (const auto& prune_lock : m_blockman.m_prune_locks) {
-                if (prune_lock.second.height_first == std::numeric_limits<int>::max()) continue;
-                // Remove the buffer and one additional block here to get actual height that is outside of the buffer
-                const int lock_height{prune_lock.second.height_first - PRUNE_LOCK_BUFFER - 1};
-                last_prune = std::max(1, std::min(last_prune, lock_height));
-                if (last_prune == lock_height) {
-                    limiting_lock = prune_lock.first;
-                }
-            }
-
-            if (limiting_lock) {
-                LogDebug(BCLog::PRUNE, "%s limited pruning to height %d\n", limiting_lock.value(), last_prune);
-            }
-
-            if (nManualPruneHeight > 0) {
-                LOG_TIME_MILLIS_WITH_CATEGORY("find files to prune (manual)", BCLog::BENCH);
-
-                m_blockman.FindFilesToPruneManual(
-                    setFilesToPrune,
-                    std::min(last_prune, nManualPruneHeight),
-                    *this);
-            } else {
-                LOG_TIME_MILLIS_WITH_CATEGORY("find files to prune", BCLog::BENCH);
-
-                m_blockman.FindFilesToPrune(setFilesToPrune, last_prune, *this, m_chainman);
-                m_blockman.m_check_for_pruning = false;
-            }
-            if (!setFilesToPrune.empty()) {
-                fFlushForPrune = true;
-                if (!m_blockman.m_have_pruned) {
-                    m_blockman.m_block_tree_db->WriteFlag("prunedblockfiles", true);
-                    m_blockman.m_have_pruned = true;
-                }
-            }
-        }
+        const std::set<int> files_to_prune{FindBlockFilesToPrune(nManualPruneHeight)};
+        const bool fFlushForPrune{!files_to_prune.empty()};
         const auto nNow{NodeClock::now()};
         // The cache is large and we're within 10% and 10 MiB of the limit, but we have time now (not in the middle of a block processing).
         bool fCacheLarge = mode == FlushStateMode::PERIODIC && cache_state >= CoinsCacheSizeState::LARGE;
@@ -2809,7 +2812,7 @@ bool Chainstate::FlushStateToDisk(
             if (fFlushForPrune) {
                 LOG_TIME_MILLIS_WITH_CATEGORY("unlink pruned files", BCLog::BENCH);
 
-                m_blockman.UnlinkPrunedFiles(setFilesToPrune);
+                m_blockman.UnlinkPrunedFiles(files_to_prune);
             }
 
             if (!CoinsTip().GetBestBlock().IsNull()) {
