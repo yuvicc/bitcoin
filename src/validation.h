@@ -922,6 +922,14 @@ private:
      */
     bool FlushBlockFilesToDisk(BlockValidationState& state, const std::set<int>& files_to_prune) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
+    /**
+     * Write the coins cache to disk: sync it (keeping it in memory), or
+     * flush and empty it if `empty_cache` is set.
+     *
+     * @returns true unless a system error occurred
+     */
+    bool FlushCoinsCache(BlockValidationState& state, bool empty_cache) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
     friend ChainstateManager;
 };
 

@@ -2788,6 +2788,22 @@ bool Chainstate::FlushBlockFilesToDisk(BlockValidationState& state, const std::s
     return true;
 }
 
+bool Chainstate::FlushCoinsCache(BlockValidationState& state, bool empty_cache)
+{
+    AssertLockHeld(::cs_main);
+    // Typical Coin structures on disk are around 48 bytes in size.
+    // Pushing a new one to the database can cause it to be written
+    // twice (once in the log, and once in the tables). This is already
+    // an overestimation, as most will delete an existing entry or
+    // overwrite one. Still, use a conservative safety factor of 2.
+    if (!CheckDiskSpace(m_chainman.m_options.datadir, 48 * 2 * 2 * CoinsTip().GetDirtyCount())) {
+        return FatalError(m_chainman.GetNotifications(), state, _("Disk space is too low!"));
+    }
+    // Flush the chainstate (which may refer to block index entries).
+    empty_cache ? CoinsTip().Flush() : CoinsTip().Sync();
+    return true;
+}
+
 bool Chainstate::FlushStateToDisk(
     BlockValidationState &state,
     FlushStateMode mode,
@@ -2825,16 +2841,9 @@ bool Chainstate::FlushStateToDisk(
             }
 
             if (!CoinsTip().GetBestBlock().IsNull()) {
-                // Typical Coin structures on disk are around 48 bytes in size.
-                // Pushing a new one to the database can cause it to be written
-                // twice (once in the log, and once in the tables). This is already
-                // an overestimation, as most will delete an existing entry or
-                // overwrite one. Still, use a conservative safety factor of 2.
-                if (!CheckDiskSpace(m_chainman.m_options.datadir, 48 * 2 * 2 * CoinsTip().GetDirtyCount())) {
-                    return FatalError(m_chainman.GetNotifications(), state, _("Disk space is too low!"));
+                if (!FlushCoinsCache(state, empty_cache)) {
+                    return false;
                 }
-                // Flush the chainstate (which may refer to block index entries).
-                empty_cache ? CoinsTip().Flush() : CoinsTip().Sync();
                 m_last_flushed_block = m_blockman.LookupBlockIndex(CoinsTip().GetBestBlock());
                 full_flush_completed = true;
                 TRACEPOINT(utxocache, flush,
