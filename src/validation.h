@@ -747,6 +747,17 @@ public:
     //! Flush all changes to disk.
     void ForceFlushStateToDisk(bool wipe_cache = true);
 
+    //! Sync the coins cache to disk, keeping it in memory.
+    //!
+    //! The block index is written first so that the on-disk chainstate never
+    //! refers to block index entries that are not on disk. Unlike
+    //! ForceFlushStateToDisk() this does not prune, does not reset the
+    //! periodic write timer and does not emit a ChainStateFlushed
+    //! notification. It is intended for read-only consumers (e.g. UTXO-set
+    //! RPCs) that just need the dirty coins written out before reading
+    //! CoinsDB() directly, and that do not advance the chain tip.
+    void SyncCoinsToDisk();
+
     //! Prune blockfiles from the disk if necessary and then flush chainstate changes
     //! if we pruned.
     void PruneAndFlush();

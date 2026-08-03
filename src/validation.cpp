@@ -2887,6 +2887,32 @@ void Chainstate::ForceFlushStateToDisk(bool wipe_cache)
     }
 }
 
+void Chainstate::SyncCoinsToDisk()
+{
+    LOCK(cs_main);
+    assert(this->CanFlushToDisk());
+    // Nothing has been validated yet (fresh datadir); there are no coins to sync.
+    if (CoinsTip().GetBestBlock().IsNull()) return;
+    BlockValidationState state;
+    try {
+        // Keep FlushStateToDisk()'s write ordering: the coins cache may refer
+        // to block index entries that are so far only dirty in memory, so the
+        // block index must reach disk before the coins do. Otherwise a crash
+        // right after this sync could leave the on-disk chainstate pointing at
+        // a best block the on-disk block index does not contain, failing
+        // LoadChainTip() on restart.
+        //
+        // The helpers already raise a fatal error notification on failure;
+        // the warning here mirrors ForceFlushStateToDisk()'s reporting.
+        if (!FlushBlockFilesToDisk(state, /*files_to_prune=*/{}) ||
+            !FlushCoinsCache(state, /*empty_cache=*/false)) {
+            LogWarning("Failed to sync coins to disk (%s)", state.ToString());
+        }
+    } catch (const std::runtime_error& e) {
+        FatalError(m_chainman.GetNotifications(), state, strprintf(_("System error while flushing: %s"), e.what()));
+    }
+}
+
 void Chainstate::PruneAndFlush()
 {
     BlockValidationState state;
