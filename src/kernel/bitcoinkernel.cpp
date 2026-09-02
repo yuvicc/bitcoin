@@ -1210,6 +1210,19 @@ int btck_block_check(const btck_Block* block, const btck_ConsensusParams* consen
     return result ? 1 : 0;
 }
 
+int btck_block_contextual_check(const btck_Block* block, const btck_ConsensusParams* consensus_params, const btck_BlockTreeEntry* prev_entry, btck_BlockValidationState* validation_state)
+{
+    auto& state = btck_BlockValidationState::get(validation_state);
+    state = BlockValidationState{};
+
+    const CBlockIndex* pindex_prev{prev_entry ? &btck_BlockTreeEntry::get(prev_entry) : nullptr};
+
+    LOCK(::cs_main);
+    const bool result = ContextualCheckBlock(*btck_Block::get(block), state, btck_ConsensusParams::get(consensus_params), pindex_prev);
+
+    return result ? 1 : 0;
+}
+
 size_t btck_block_count_transactions(const btck_Block* block)
 {
     return btck_Block::get(block)->vtx.size();
@@ -1488,6 +1501,29 @@ int32_t btck_block_header_get_version(const btck_BlockHeader* header)
 uint32_t btck_block_header_get_nonce(const btck_BlockHeader* header)
 {
     return btck_BlockHeader::get(header).nNonce;
+}
+
+int btck_block_header_check(const btck_BlockHeader* header, const btck_ConsensusParams* consensus_params, int check_pow, btck_BlockValidationState* validation_state)
+{
+    auto& state = btck_BlockValidationState::get(validation_state);
+    state = BlockValidationState{};
+
+    const bool result = CheckBlockHeader(btck_BlockHeader::get(header), state, btck_ConsensusParams::get(consensus_params), /*fCheckPOW=*/check_pow != 0);
+
+    return result ? 1 : 0;
+}
+
+int btck_block_header_contextual_check(const btck_BlockHeader* header, const btck_ConsensusParams* consensus_params, const btck_BlockTreeEntry* prev_entry, int64_t now, btck_BlockValidationState* validation_state)
+{
+    auto& state = btck_BlockValidationState::get(validation_state);
+    state = BlockValidationState{};
+
+    const NodeClock::time_point now_tp{std::chrono::seconds{now}};
+
+    LOCK(::cs_main);
+    const bool result = ContextualCheckBlockHeader(btck_BlockHeader::get(header), state, btck_ConsensusParams::get(consensus_params), &btck_BlockTreeEntry::get(prev_entry), now_tp);
+
+    return result ? 1 : 0;
 }
 
 int btck_block_header_to_bytes(const btck_BlockHeader* header, unsigned char output[80])
