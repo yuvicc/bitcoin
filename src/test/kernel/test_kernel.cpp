@@ -1024,6 +1024,144 @@ BOOST_AUTO_TEST_CASE(btck_check_block_context_free)
                           HasReason{"failed to instantiate btck object"});
 }
 
+BOOST_AUTO_TEST_CASE(btck_check_block_header_context_free)
+{
+    constexpr size_t NBITS_OFFSET{4 + 32 + 32 + 4};
+
+    // Mainnet block 1 header
+    auto raw_header = hex_string_to_byte_vec("010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e36299");
+
+    ChainParams mainnet_params{ChainType::MAINNET};
+    auto consensus_params = mainnet_params.GetConsensusParams();
+
+    BlockHeader header{raw_header};
+    BlockValidationState state;
+
+    BOOST_CHECK(header.Check(consensus_params, /*check_pow=*/true, state));
+    BOOST_CHECK(state.GetValidationMode() == ValidationMode::VALID);
+
+    BOOST_CHECK(header.Check(consensus_params, /*check_pow=*/false, state));
+    BOOST_CHECK(state.GetValidationMode() == ValidationMode::VALID);
+
+    // Raising the difficulty target makes the existing hash fail the proof of work.
+    auto bad_pow_header_data = raw_header;
+    bad_pow_header_data[NBITS_OFFSET + 3] = std::byte{0x1c};
+    BlockHeader bad_pow_header{bad_pow_header_data};
+
+    BOOST_CHECK(!bad_pow_header.Check(consensus_params, /*check_pow=*/true, state));
+    BOOST_CHECK(state.GetValidationMode() == ValidationMode::INVALID);
+    BOOST_CHECK(state.GetBlockValidationResult() == BlockValidationResult::INVALID_HEADER);
+
+    // Skipping the proof-of-work check accepts the same header.
+    BOOST_CHECK(bad_pow_header.Check(consensus_params, /*check_pow=*/false, state));
+    BOOST_CHECK(state.GetValidationMode() == ValidationMode::VALID);
+}
+
+BOOST_AUTO_TEST_CASE(btck_check_block_contextual)
+{
+    constexpr size_t VERSION_OFFSET{0};
+    constexpr size_t TIMESTAMP_OFFSET{4 + 32 + 32};
+    constexpr size_t NBITS_OFFSET{4 + 32 + 32 + 4};
+
+    auto test_directory{TestDirectory{"contextual_check_test_bitcoin_kernel"}};
+    auto notifications{std::make_shared<TestKernelNotifications>()};
+    auto context{create_context(notifications, ChainType::REGTEST)};
+    auto chainman{create_chainman(
+        test_directory,
+        /*reindex=*/false,
+        /*wipe_chainstate=*/false,
+        /*block_tree_db_in_memory=*/true,
+        /*chainstate_db_in_memory=*/true,
+        context)};
+
+    ChainParams regtest_params{ChainType::REGTEST};
+    auto consensus_params = regtest_params.GetConsensusParams();
+
+    // Process the first blocks so their entries exist in the block tree.
+    // REGTEST_BLOCK_DATA[i] is the block at height i + 1.
+    constexpr size_t NUM_BLOCKS{10};
+    for (size_t i{0}; i < NUM_BLOCKS; i++) {
+        Block block{hex_string_to_byte_vec(REGTEST_BLOCK_DATA[i])};
+        bool new_block{false};
+        BOOST_CHECK(chainman->ProcessBlock(block, &new_block));
+        BOOST_CHECK(new_block);
+    }
+
+    auto chain{chainman->GetChain()};
+    auto tip{chain.GetByHeight(NUM_BLOCKS)};
+    BlockValidationState state;
+
+    // The genesis block has no predecessor.
+    Block genesis{*chainman->ReadBlock(chain.GetByHeight(0))};
+    BOOST_CHECK(genesis.ContextualCheck(consensus_params, std::nullopt, state));
+    BOOST_CHECK(state.GetValidationMode() == ValidationMode::VALID);
+
+    // An already connected block validates against the entry of its predecessor.
+    auto entry_5{chain.GetByHeight(5)};
+    Block block_5{*chainman->ReadBlock(entry_5)};
+    BOOST_CHECK(block_5.ContextualCheck(consensus_params, entry_5.GetPrevious(), state));
+    BOOST_CHECK(state.GetValidationMode() == ValidationMode::VALID);
+
+    // The next, not yet processed block validates against the current tip.
+    Block block{hex_string_to_byte_vec(REGTEST_BLOCK_DATA[NUM_BLOCKS])};
+    BlockHeader header{block.GetHeader()};
+    BOOST_CHECK(BlockHash{header.PrevHash()} == BlockHash{tip.GetHash()});
+
+    BOOST_CHECK(block.ContextualCheck(consensus_params, tip, state));
+    BOOST_CHECK(state.GetValidationMode() == ValidationMode::VALID);
+
+    // Against the wrong predecessor the BIP34 coinbase height no longer matches.
+    BOOST_CHECK(!block.ContextualCheck(consensus_params, entry_5, state));
+    BOOST_CHECK(state.GetValidationMode() == ValidationMode::INVALID);
+    BOOST_CHECK(state.GetBlockValidationResult() == BlockValidationResult::CONSENSUS);
+
+    // Contextual header checks.
+    const std::chrono::seconds block_time{header.Timestamp()};
+    BOOST_CHECK(header.ContextualCheck(consensus_params, tip, block_time, state));
+    BOOST_CHECK(state.GetValidationMode() == ValidationMode::VALID);
+
+    // With the current time 3h before the header, the header is >2h in the future.
+    BOOST_CHECK(!header.ContextualCheck(consensus_params, tip, block_time - std::chrono::hours{3}, state));
+    BOOST_CHECK(state.GetValidationMode() == ValidationMode::INVALID);
+    BOOST_CHECK(state.GetBlockValidationResult() == BlockValidationResult::TIME_FUTURE);
+
+    const auto raw_header{header.ToBytes()};
+
+    // A timestamp of zero is not later than the predecessor's median time past.
+    auto old_time_header_data = raw_header;
+    for (size_t i{0}; i < 4; i++) old_time_header_data[TIMESTAMP_OFFSET + i] = std::byte{0x00};
+    BlockHeader old_time_header{old_time_header_data};
+    BOOST_CHECK(!old_time_header.ContextualCheck(consensus_params, tip, block_time, state));
+    BOOST_CHECK(state.GetValidationMode() == ValidationMode::INVALID);
+    BOOST_CHECK(state.GetBlockValidationResult() == BlockValidationResult::INVALID_HEADER);
+
+    // Regtest never retargets, so the mainnet genesis nBits are incorrect.
+    auto bad_bits_header_data = raw_header;
+    bad_bits_header_data[NBITS_OFFSET + 0] = std::byte{0xff};
+    bad_bits_header_data[NBITS_OFFSET + 1] = std::byte{0xff};
+    bad_bits_header_data[NBITS_OFFSET + 2] = std::byte{0x00};
+    bad_bits_header_data[NBITS_OFFSET + 3] = std::byte{0x1d};
+    BlockHeader bad_bits_header{bad_bits_header_data};
+    BOOST_CHECK(!bad_bits_header.ContextualCheck(consensus_params, tip, block_time, state));
+    BOOST_CHECK(state.GetValidationMode() == ValidationMode::INVALID);
+    BOOST_CHECK(state.GetBlockValidationResult() == BlockValidationResult::INVALID_HEADER);
+
+    // Version 1 is outdated once BIP34, BIP65 and BIP66 are active, which is
+    // the case from height 1 on regtest.
+    auto old_version_header_data = raw_header;
+    old_version_header_data[VERSION_OFFSET + 0] = std::byte{0x01};
+    for (size_t i{1}; i < 4; i++) old_version_header_data[VERSION_OFFSET + i] = std::byte{0x00};
+    BlockHeader old_version_header{old_version_header_data};
+    BOOST_CHECK(!old_version_header.ContextualCheck(consensus_params, tip, block_time, state));
+    BOOST_CHECK(state.GetValidationMode() == ValidationMode::INVALID);
+    BOOST_CHECK(state.GetBlockValidationResult() == BlockValidationResult::INVALID_HEADER);
+
+    // The context-free header check is unaffected by the predecessor and
+    // passes for the trivial regtest proof of work.
+    BOOST_CHECK(old_version_header.Check(consensus_params, /*check_pow=*/true, state));
+    BOOST_CHECK(state.GetValidationMode() == ValidationMode::VALID);
+}
+
 BOOST_AUTO_TEST_CASE(btck_chainman_mainnet_tests)
 {
     auto test_directory{TestDirectory{"mainnet_test_bitcoin_kernel"}};
