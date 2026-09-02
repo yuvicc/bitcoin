@@ -400,6 +400,8 @@ class PrecomputedTransactionData;
 class Transaction;
 class TransactionOutput;
 class BlockValidationState;
+class BlockTreeEntry;
+class ConsensusParamsView;
 
 template <typename Derived>
 class ScriptPubkeyApi
@@ -849,6 +851,15 @@ public:
         }
         return header;
     }
+
+    bool Check(const ConsensusParamsView& consensus_params,
+        bool check_pow,
+        BlockValidationState& state) const;
+
+    bool ContextualCheck(const ConsensusParamsView& consensus_params,
+        const BlockTreeEntry& prev_entry,
+        std::chrono::seconds now,
+        BlockValidationState& state) const;
 };
 
 class BlockHeaderView : public View<btck_BlockHeader>, public BlockHeaderApi<BlockHeaderView>
@@ -898,6 +909,10 @@ public:
 
     bool Check(const ConsensusParamsView& consensus_params,
         BlockCheckFlags flags,
+        BlockValidationState& state) const;
+
+    bool ContextualCheck(const ConsensusParamsView& consensus_params,
+        const std::optional<BlockTreeEntry>& prev_entry,
         BlockValidationState& state) const;
 
     MAKE_RANGE_METHOD(Transactions, Block, &Block::CountTransactions, &Block::GetTransaction, *this)
@@ -1068,6 +1083,30 @@ inline bool Block::Check(const ConsensusParamsView& consensus_params,
     BlockValidationState& state) const
 {
     return btck_block_check(get(), consensus_params.get(), static_cast<btck_BlockCheckFlags>(flags), state.get()) == 1;
+}
+
+inline bool Block::ContextualCheck(const ConsensusParamsView& consensus_params,
+    const std::optional<BlockTreeEntry>& prev_entry,
+    BlockValidationState& state) const
+{
+    return btck_block_contextual_check(get(), consensus_params.get(), prev_entry ? prev_entry->get() : nullptr, state.get()) == 1;
+}
+
+template <typename Derived>
+bool BlockHeaderApi<Derived>::Check(const ConsensusParamsView& consensus_params,
+    bool check_pow,
+    BlockValidationState& state) const
+{
+    return btck_block_header_check(impl(), consensus_params.get(), check_pow ? 1 : 0, state.get()) == 1;
+}
+
+template <typename Derived>
+bool BlockHeaderApi<Derived>::ContextualCheck(const ConsensusParamsView& consensus_params,
+    const BlockTreeEntry& prev_entry,
+    std::chrono::seconds now,
+    BlockValidationState& state) const
+{
+    return btck_block_header_contextual_check(impl(), consensus_params.get(), prev_entry.get(), now.count(), state.get()) == 1;
 }
 
 class TxValidationState : public UniqueHandle<btck_TxValidationState, btck_tx_validation_state_destroy>
