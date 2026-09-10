@@ -1439,6 +1439,34 @@ BITCOINKERNEL_API int btck_block_check(
     btck_BlockValidationState* validation_state) BITCOINKERNEL_ARG_NONNULL(1, 2, 4);
 
 /**
+ * @brief Perform context-dependent validation checks on a btck_Block.
+ *
+ * Runs the checks that depend on the block's position in the block tree, but
+ * not on the UTXO set: transaction finality (BIP68/BIP113 lock times), the
+ * BIP34 coinbase height, the segwit witness commitment, and the block weight
+ * limit. This does not repeat the context-free checks performed by
+ * btck_block_check, nor does it validate the block header against its
+ * predecessor (see btck_block_header_contextual_check), nor does it execute
+ * any transaction scripts.
+ *
+ * @param[in]     block             Non-null, btck_Block to validate.
+ * @param[in]     consensus_params  Non-null, btck_ConsensusParams for validation.
+ * @param[in]     prev_entry        Nullable, the btck_BlockTreeEntry of the block's
+ *                                  predecessor. May only be null for the genesis
+ *                                  block.
+ * @param[out]    validation_state  Non-null, previously created with
+ *                                  btck_block_validation_state_create.
+ *                                  Overwritten in-place with the validation
+ *                                  result.
+ * @return                          1 if the btck_Block passed the checks, 0 otherwise.
+ */
+BITCOINKERNEL_API int btck_block_contextual_check(
+    const btck_Block* block,
+    const btck_ConsensusParams* consensus_params,
+    const btck_BlockTreeEntry* prev_entry,
+    btck_BlockValidationState* validation_state) BITCOINKERNEL_ARG_NONNULL(1, 2, 4);
+
+/**
  * @brief Count the number of transactions contained in a block.
  *
  * @param[in] block Non-null.
@@ -2058,6 +2086,57 @@ BITCOINKERNEL_API uint32_t btck_block_header_get_nonce(
  */
 BITCOINKERNEL_API int BITCOINKERNEL_WARN_UNUSED_RESULT btck_block_header_to_bytes(
     const btck_BlockHeader* header, unsigned char output[80]) BITCOINKERNEL_ARG_NONNULL(1, 2);
+
+/**
+ * @brief Perform context-free validation checks on a btck_BlockHeader.
+ *
+ * Currently the only context-free header check is that the header's hash
+ * satisfies the proof-of-work target claimed in its nBits field. This check
+ * can be skipped via @p check_pow.
+ *
+ * @param[in]     header            Non-null, btck_BlockHeader to validate.
+ * @param[in]     consensus_params  Non-null, btck_ConsensusParams for validation.
+ * @param[in]     check_pow         If non-zero, verify the proof of work.
+ * @param[out]    validation_state  Non-null, previously created with
+ *                                  btck_block_validation_state_create.
+ *                                  Overwritten in-place with the validation
+ *                                  result.
+ * @return                          1 if the btck_BlockHeader passed the checks, 0 otherwise.
+ */
+BITCOINKERNEL_API int btck_block_header_check(
+    const btck_BlockHeader* header,
+    const btck_ConsensusParams* consensus_params,
+    int check_pow,
+    btck_BlockValidationState* validation_state) BITCOINKERNEL_ARG_NONNULL(1, 2, 4);
+
+/**
+ * @brief Perform context-dependent validation checks on a btck_BlockHeader.
+ *
+ * Validates the header against its predecessor in the block tree: the nBits
+ * field must match the required difficulty, the timestamp must be later than
+ * the predecessor's median time past and no more than two hours after @p now,
+ * and the version must not be outdated for the deployments active at this
+ * height. This does not verify the proof of work itself, see
+ * btck_block_header_check.
+ *
+ * @param[in]     header            Non-null, btck_BlockHeader to validate.
+ * @param[in]     consensus_params  Non-null, btck_ConsensusParams for validation.
+ * @param[in]     prev_entry        Non-null, the btck_BlockTreeEntry of the
+ *                                  header's predecessor.
+ * @param[in]     now               The current time as seconds since the UNIX
+ *                                  epoch, used for the future-timestamp check.
+ * @param[out]    validation_state  Non-null, previously created with
+ *                                  btck_block_validation_state_create.
+ *                                  Overwritten in-place with the validation
+ *                                  result.
+ * @return                          1 if the btck_BlockHeader passed the checks, 0 otherwise.
+ */
+BITCOINKERNEL_API int btck_block_header_contextual_check(
+    const btck_BlockHeader* header,
+    const btck_ConsensusParams* consensus_params,
+    const btck_BlockTreeEntry* prev_entry,
+    int64_t now,
+    btck_BlockValidationState* validation_state) BITCOINKERNEL_ARG_NONNULL(1, 2, 3, 5);
 
 /**
  * Destroy the btck_BlockHeader.
