@@ -4483,7 +4483,7 @@ MempoolAcceptResult ChainstateManager::ProcessTransaction(const CTransactionRef&
 }
 
 
-BlockValidationState TestBlockValidity(
+util::Expected<BlockValidationState, kernel::FatalError> TestBlockValidity(
     Chainstate& chainstate,
     const CBlock& block,
     const bool check_pow,
@@ -4544,18 +4544,13 @@ BlockValidationState TestBlockValidity(
     index_dummy.phashBlock = &block_hash;
     CCoinsViewCache view_dummy(&chainstate.CoinsTip());
 
-    // Set fJustCheck to true in order to update, and not clear, validation caches.
-    auto res{chainstate.ConnectBlock(block, &index_dummy, view_dummy, /*fJustCheck=*/true)};
-    if (!res) {
-        state.Error(res.error().message());
-        return state;
-    }
-    state = *res;
-
-    // Ensure no check returned successfully while also setting an invalid state.
+    // Ensure no preceding check returned successfully while setting an invalid state.
     if (!state.IsValid()) NONFATAL_UNREACHABLE();
 
-    return state;
+    // ConnectBlock returns the validation state itself, so there is no separate
+    // success flag to check for consistency with that state.
+    // Set fJustCheck to true in order to update, and not clear, validation caches.
+    return chainstate.ConnectBlock(block, &index_dummy, view_dummy, /*fJustCheck=*/true);
 }
 
 /* This function is called from the RPC code for pruneblockchain */
