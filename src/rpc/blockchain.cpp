@@ -28,6 +28,7 @@
 #include <interfaces/mining.h>
 #include <interfaces/types.h>
 #include <kernel/coinstats.h>
+#include <kernel/notifications_interface.h>
 #include <logging/timer.h>
 #include <net.h>
 #include <net_processing.h>
@@ -1738,11 +1739,10 @@ static RPCMethod preciousblock()
         }
     }
 
-    BlockValidationState state;
-    chainman.ActiveChainstate().PreciousBlock(state, pblockindex);
-
-    if (!state.IsValid()) {
-        throw JSONRPCError(RPC_DATABASE_ERROR, state.ToString());
+    try {
+        chainman.ActiveChainstate().PreciousBlock(pblockindex);
+    } catch (const kernel::FatalError& e) {
+        throw JSONRPCError(RPC_DATABASE_ERROR, e.what());
     }
 
     return UniValue::VNULL;
@@ -1751,7 +1751,6 @@ static RPCMethod preciousblock()
 }
 
 void InvalidateBlock(ChainstateManager& chainman, const uint256 block_hash) {
-    BlockValidationState state;
     CBlockIndex* pblockindex;
     {
         LOCK(chainman.GetMutex());
@@ -1760,14 +1759,11 @@ void InvalidateBlock(ChainstateManager& chainman, const uint256 block_hash) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
         }
     }
-    chainman.ActiveChainstate().InvalidateBlock(state, pblockindex);
-
-    if (state.IsValid()) {
-        chainman.ActiveChainstate().ActivateBestChain(state);
-    }
-
-    if (!state.IsValid()) {
-        throw JSONRPCError(RPC_DATABASE_ERROR, state.ToString());
+    try {
+        chainman.ActiveChainstate().InvalidateBlock(pblockindex);
+        chainman.ActiveChainstate().ActivateBestChain();
+    } catch (const kernel::FatalError& e) {
+        throw JSONRPCError(RPC_DATABASE_ERROR, e.what());
     }
 }
 
@@ -1808,11 +1804,10 @@ void ReconsiderBlock(ChainstateManager& chainman, uint256 block_hash) {
         chainman.RecalculateBestHeader();
     }
 
-    BlockValidationState state;
-    chainman.ActiveChainstate().ActivateBestChain(state);
-
-    if (!state.IsValid()) {
-        throw JSONRPCError(RPC_DATABASE_ERROR, state.ToString());
+    try {
+        chainman.ActiveChainstate().ActivateBestChain();
+    } catch (const kernel::FatalError& e) {
+        throw JSONRPCError(RPC_DATABASE_ERROR, e.what());
     }
 }
 

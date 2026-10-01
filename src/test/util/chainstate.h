@@ -108,9 +108,8 @@ CreateAndActivateUTXOSnapshot(
             }
             chain.PopulateBlockIndexCandidates();
         }
-        BlockValidationState state;
-        if (!node.chainman->ActiveChainstate().ActivateBestChain(state)) {
-            throw std::runtime_error(strprintf("ActivateBestChain failed. (%s)", state.ToString()));
+        if (!node.chainman->ActiveChainstate().ActivateBestChain()) {
+            throw std::runtime_error("ActivateBestChain failed.");
         }
         Assert(
             0 == WITH_LOCK(node.chainman->GetMutex(), return node.chainman->ActiveHeight()));

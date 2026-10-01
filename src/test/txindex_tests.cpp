@@ -93,8 +93,7 @@ void InvalidateBlock(ChainstateManager& chainman, const uint256& block_hash)
 {
     CBlockIndex* block_index{WITH_LOCK(cs_main, return chainman.m_blockman.LookupBlockIndex(block_hash))};
     BOOST_REQUIRE(block_index);
-    BlockValidationState state;
-    BOOST_REQUIRE(chainman.ActiveChainstate().InvalidateBlock(state, block_index));
+    BOOST_REQUIRE(chainman.ActiveChainstate().InvalidateBlock(block_index));
 }
 
 } // namespace
@@ -335,10 +334,7 @@ BOOST_FIXTURE_TEST_CASE(txindex_reorg_keeps_stale_entries, TestChain100Setup)
         chainman.ActiveChainstate().ResetBlockFailureFlags(chainman.m_blockman.LookupBlockIndex(stale_block_hash));
     }
     InvalidateBlock(chainman, branch_block_hash);
-    {
-        BlockValidationState state;
-        BOOST_REQUIRE(chainman.ActiveChainstate().ActivateBestChain(state));
-    }
+    BOOST_REQUIRE(chainman.ActiveChainstate().ActivateBestChain());
     BOOST_REQUIRE(txindex.BlockUntilSyncedToCurrentChain());
     BOOST_CHECK(WITH_LOCK(cs_main, return chainman.ActiveChain().Tip()->GetBlockHash()) == stale_block_hash);
 

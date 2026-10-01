@@ -86,8 +86,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager, TestChain100Setup)
             cs->PopulateBlockIndexCandidates();
         }
     }
-    BlockValidationState _;
-    BOOST_CHECK(c2.ActivateBestChain(_, nullptr));
+    BOOST_CHECK(c2.ActivateBestChain(nullptr));
 
     BOOST_CHECK_EQUAL(WITH_LOCK(::cs_main, return *manager.CurrentChainstate().m_from_snapshot_blockhash), snapshot_blockhash);
     BOOST_CHECK(WITH_LOCK(::cs_main, return manager.CurrentChainstate().m_assumeutxo == Assumeutxo::UNVALIDATED));
@@ -651,8 +650,7 @@ BOOST_FIXTURE_TEST_CASE(invalidate_block_and_reconsider_fork, TestChain100Setup)
     //                              <- block99' <- block100'
     // by temporarily invalidating block99. the chain tip now falls to block98,
     // mine 2 new blocks on top of block 98 (block99' and block100') and then restore block99 and block 100.
-    BlockValidationState state;
-    BOOST_REQUIRE(chainstate.InvalidateBlock(state, block99));
+    BOOST_REQUIRE(chainstate.InvalidateBlock(block99));
     BOOST_REQUIRE(WITH_LOCK(cs_main, return chainman.ActiveChain().Tip()) == block98);
     CScript coinbase_script = CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
     for (int i = 0; i < 2; ++i) {
@@ -673,7 +671,7 @@ BOOST_FIXTURE_TEST_CASE(invalidate_block_and_reconsider_fork, TestChain100Setup)
         chainstate.ResetBlockFailureFlags(block99);
         chainman.RecalculateBestHeader();
     }
-    chainstate.ActivateBestChain(state);
+    chainstate.ActivateBestChain();
     BOOST_REQUIRE(WITH_LOCK(cs_main, return chainman.ActiveChain().Tip()) == block100);
 
     {
@@ -685,7 +683,7 @@ BOOST_FIXTURE_TEST_CASE(invalidate_block_and_reconsider_fork, TestChain100Setup)
     }
 
     // Invalidate block98
-    BOOST_REQUIRE(chainstate.InvalidateBlock(state, block98));
+    BOOST_REQUIRE(chainstate.InvalidateBlock(block98));
 
     {
         LOCK(chainman.GetMutex());
@@ -705,7 +703,7 @@ BOOST_FIXTURE_TEST_CASE(invalidate_block_and_reconsider_fork, TestChain100Setup)
         chainstate.ResetBlockFailureFlags(block99);
         chainman.RecalculateBestHeader();
     }
-    chainstate.ActivateBestChain(state);
+    chainstate.ActivateBestChain();
     {
         LOCK(chainman.GetMutex());
         BOOST_CHECK(!(block98->nStatus & BLOCK_FAILED_VALID));
@@ -741,10 +739,9 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_init, SnapshotTestSetup)
     //
     // Note that this is not a realistic use of DisconnectTip().
     DisconnectedBlockTransactions unused_pool{MAX_DISCONNECTED_TX_POOL_BYTES};
-    BlockValidationState unused_state;
     {
         LOCK2(::cs_main, bg_chainstate.MempoolMutex());
-        BOOST_CHECK(bg_chainstate.DisconnectTip(unused_state, &unused_pool));
+        BOOST_CHECK(bg_chainstate.DisconnectTip(&unused_pool));
         unused_pool.clear();  // to avoid queuedTx assertion errors on teardown
     }
     BOOST_CHECK_EQUAL(bg_chainstate.m_chain.Height(), 109);
