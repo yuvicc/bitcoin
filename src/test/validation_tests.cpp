@@ -7,19 +7,66 @@
 #include <consensus/merkle.h>
 #include <core_io.h>
 #include <hash.h>
+#include <kernel/notifications_interface.h>
 #include <net.h>
 #include <signet.h>
 #include <uint256.h>
 #include <util/chaintype.h>
 #include <validation.h>
 
+#include <exception>
+#include <stdexcept>
 #include <string>
+#include <type_traits>
 
+#include <test/util/common.h>
 #include <test/util/setup_common.h>
 
 #include <boost/test/unit_test.hpp>
 
 BOOST_FIXTURE_TEST_SUITE(validation_tests, BasicTestingSetup)
+
+namespace {
+struct CountingNotifications : kernel::Notifications {
+    int fatal_errors{0};
+    std::string message;
+    void fatalError(const bilingual_str& error) override
+    {
+        ++fatal_errors;
+        message = error.original;
+    }
+};
+} // namespace
+
+BOOST_AUTO_TEST_CASE(fatal_error_raise)
+{
+    static_assert(std::is_base_of_v<std::exception, kernel::FatalError>);
+    // Existing std::runtime_error handlers raise their own notification.
+    static_assert(!std::is_base_of_v<std::runtime_error, kernel::FatalError>);
+
+    CountingNotifications notifications;
+    BOOST_CHECK_EXCEPTION(kernel::FatalError::Raise(notifications, Untranslated("fatal error")),
+                          kernel::FatalError, HasReason{"fatal error"});
+    BOOST_CHECK_EQUAL(notifications.fatal_errors, 1);
+    BOOST_CHECK_EQUAL(notifications.message, "fatal error");
+}
+
+BOOST_AUTO_TEST_CASE(fatal_error_rethrow)
+{
+    CountingNotifications notifications;
+    auto raise_and_replace{[&] {
+        try {
+            kernel::FatalError::Raise(notifications, Untranslated("disk failure"));
+        } catch (kernel::FatalError& e) {
+            e.ReplaceMessage("block write failed");
+            throw;
+        }
+    }};
+    // Rethrowing with a replaced message does not fire another notification.
+    BOOST_CHECK_EXCEPTION(raise_and_replace(), kernel::FatalError, HasReason{"block write failed"});
+    BOOST_CHECK_EQUAL(notifications.fatal_errors, 1);
+    BOOST_CHECK_EQUAL(notifications.message, "disk failure");
+}
 
 static void TestBlockSubsidyHalvings(const Consensus::Params& consensusParams)
 {
