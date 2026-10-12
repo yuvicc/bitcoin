@@ -7,8 +7,10 @@
 #include <consensus/consensus.h>
 #include <consensus/merkle.h>
 #include <consensus/validation.h>
+#include <kernel/notifications_interface.h>
 #include <node/block_template_manager.h>
 #include <node/blockstorage.h>
+#include <node/kernel_notifications.h>
 #include <node/miner.h>
 #include <pow.h>
 #include <primitives/block.h>
@@ -19,6 +21,7 @@
 #include <test/util/common.h>
 #include <test/util/script.h>
 #include <test/util/setup_common.h>
+#include <test/util/time.h>
 #include <txmempool.h>
 #include <uint256.h>
 #include <util/check.h>
@@ -29,6 +32,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <span>
 #include <thread>
@@ -48,6 +52,129 @@ struct MinerTestingSetup : public RegTestingSetup {
 } // namespace validation_block_tests
 
 BOOST_FIXTURE_TEST_SUITE(validation_block_tests, MinerTestingSetup)
+
+namespace {
+enum class FatalSubmissionFailure { BLOCK_WRITE, UNDO_WRITE, AFTER_CHECK };
+
+//! Make writing a block, its undo data, or flushing the chainstate fail, and
+//! check that the fatal error propagates as a kernel::FatalError and is
+//! translated into a failure reason by SubmitBlock().
+void TestFatalBlockSubmission(MinerTestingSetup& setup, FatalSubmissionFailure failure, bool submit_block)
+{
+    auto& node{setup.m_node};
+    FakeNodeClock clock{};
+    auto& chainman{*node.chainman};
+    auto block{setup.GoodBlock(chainman.GetParams().GenesisBlock().GetHash())};
+    node.notifications->m_shutdown_on_fatal_error = false;
+
+    // Restore the block files before the testing setup flushes its chainstate.
+    struct FileObstruction {
+        fs::path path;
+        fs::path backup;
+        bool obstructed{false};
+        bool had_file{false};
+
+        void Obstruct(bool replace_with_directory)
+        {
+            had_file = fs::exists(path);
+            if (had_file) fs::rename(path, backup);
+            obstructed = true;
+            if (replace_with_directory) fs::create_directory(path);
+        }
+        ~FileObstruction()
+        {
+            if (!obstructed) return;
+            fs::remove(path);
+            if (had_file) fs::rename(backup, path);
+        }
+    } obstruction;
+
+    const auto blocks_dir{chainman.m_blockman.GetBlockPosFilename(FlatFilePos{0, 0}).parent_path()};
+    obstruction.path = failure == FatalSubmissionFailure::AFTER_CHECK ? blocks_dir :
+        blocks_dir / (failure == FatalSubmissionFailure::BLOCK_WRITE ? "blk00000.dat" : "rev00000.dat");
+    obstruction.backup = obstruction.path + ".backup";
+
+    struct Subscriber final : CValidationInterface {
+        int calls{0};
+        std::function<void()> on_valid;
+
+        void BlockChecked(const std::shared_ptr<const CBlock>&, const BlockValidationState& state) override
+        {
+            ++calls;
+            BOOST_CHECK(state.IsValid());
+            if (state.IsValid() && on_valid) on_valid();
+        }
+    };
+    auto subscriber{std::make_shared<Subscriber>()};
+    if (failure == FatalSubmissionFailure::AFTER_CHECK) {
+        // Force the periodic flush after connection to fail, after BlockChecked
+        // has already reported a valid block.
+        clock += 71min;
+        subscriber->on_valid = [&] { obstruction.Obstruct(/*replace_with_directory=*/false); };
+    } else {
+        obstruction.Obstruct(/*replace_with_directory=*/true);
+    }
+
+    const auto check_reason{[&](const std::string& reason) {
+        switch (failure) {
+        case FatalSubmissionFailure::BLOCK_WRITE: return reason == "Failed to write block.";
+        case FatalSubmissionFailure::UNDO_WRITE: return reason == "Failed to write undo data.";
+        case FatalSubmissionFailure::AFTER_CHECK: return reason.starts_with("System error while flushing:");
+        }
+        return false;
+    }};
+
+    node.validation_signals->RegisterSharedValidationInterface(subscriber);
+    if (submit_block) {
+        std::string reason, debug;
+        BOOST_CHECK(!Assert(node.block_template_manager)->SubmitBlock(block, reason, debug));
+        BOOST_CHECK_MESSAGE(check_reason(reason), reason);
+        BOOST_CHECK(debug.empty());
+    } else {
+        bool new_block{false};
+        BOOST_CHECK_EXCEPTION(chainman.ProcessNewBlock(block, /*force_processing=*/true, /*min_pow_checked=*/true, &new_block),
+                              kernel::FatalError,
+                              [&](const kernel::FatalError& e) { return check_reason(e.what()); });
+    }
+    node.validation_signals->UnregisterSharedValidationInterface(subscriber);
+
+    // Fatal errors are not reported through BlockChecked.
+    BOOST_CHECK_EQUAL(subscriber->calls, failure == FatalSubmissionFailure::AFTER_CHECK ? 1 : 0);
+}
+} // namespace
+
+BOOST_AUTO_TEST_CASE(process_new_block_write_failure)
+{
+    TestFatalBlockSubmission(*this, FatalSubmissionFailure::BLOCK_WRITE, /*submit_block=*/false);
+}
+
+BOOST_AUTO_TEST_CASE(submit_block_write_failure)
+{
+    TestFatalBlockSubmission(*this, FatalSubmissionFailure::BLOCK_WRITE, /*submit_block=*/true);
+}
+
+BOOST_AUTO_TEST_CASE(process_new_block_undo_failure)
+{
+    TestFatalBlockSubmission(*this, FatalSubmissionFailure::UNDO_WRITE, /*submit_block=*/false);
+}
+
+BOOST_AUTO_TEST_CASE(submit_block_undo_failure)
+{
+    TestFatalBlockSubmission(*this, FatalSubmissionFailure::UNDO_WRITE, /*submit_block=*/true);
+}
+
+#ifndef WIN32
+// Windows does not allow moving the blocks directory while its files are open.
+BOOST_AUTO_TEST_CASE(process_new_block_flush_failure)
+{
+    TestFatalBlockSubmission(*this, FatalSubmissionFailure::AFTER_CHECK, /*submit_block=*/false);
+}
+
+BOOST_AUTO_TEST_CASE(submit_block_flush_failure)
+{
+    TestFatalBlockSubmission(*this, FatalSubmissionFailure::AFTER_CHECK, /*submit_block=*/true);
+}
+#endif // WIN32
 
 struct TestSubscriber final : public CValidationInterface {
     uint256 m_expected_tip;
