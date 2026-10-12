@@ -2595,9 +2595,12 @@ void PeerManagerImpl::ProcessGetBlockData(CNode& pfrom, Peer& peer, const CInv& 
         }
     } // release cs_main before calling ActivateBestChain
     if (need_activate_chain) {
-        BlockValidationState state;
-        if (!m_chainman.ActiveChainstate().ActivateBestChain(state, a_recent_block)) {
-            LogDebug(BCLog::NET, "failed to activate chain (%s)\n", state.ToString());
+        try {
+            if (!m_chainman.ActiveChainstate().ActivateBestChain(a_recent_block)) {
+                LogDebug(BCLog::NET, "failed to activate chain\n");
+            }
+        } catch (const kernel::FatalError& e) {
+            LogDebug(BCLog::NET, "failed to activate chain (%s)\n", e.what());
         }
     }
 
@@ -3679,7 +3682,15 @@ void PeerManagerImpl::ProcessGetCFCheckPt(CNode& node, Peer& peer, DataStream& v
 void PeerManagerImpl::ProcessBlock(CNode& node, const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked)
 {
     bool new_block{false};
-    m_chainman.ProcessNewBlock(block, force_processing, min_pow_checked, &new_block);
+    try {
+        (void)m_chainman.ProcessNewBlock(block, force_processing, min_pow_checked, &new_block);
+    } catch (...) {
+        // Operational failures must not be attributed to the peer.
+        LOCK(cs_main);
+        mapBlockSource.erase(block->GetHash());
+        if (new_block) RemoveBlockRequest(block->GetHash(), std::nullopt);
+        throw;
+    }
     if (new_block) {
         node.m_last_block_time = GetTime<std::chrono::seconds>();
         // In case this block came from a different peer than we requested
@@ -3687,7 +3698,8 @@ void PeerManagerImpl::ProcessBlock(CNode& node, const std::shared_ptr<const CBlo
         // this block to disk).
         LOCK(cs_main);
         RemoveBlockRequest(block->GetHash(), std::nullopt);
-    } else {
+    }
+    if (!new_block) {
         LOCK(cs_main);
         mapBlockSource.erase(block->GetHash());
     }
@@ -4513,9 +4525,12 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
                 LOCK(m_most_recent_block_mutex);
                 a_recent_block = m_most_recent_block;
             }
-            BlockValidationState state;
-            if (!m_chainman.ActiveChainstate().ActivateBestChain(state, a_recent_block)) {
-                LogDebug(BCLog::NET, "failed to activate chain (%s)\n", state.ToString());
+            try {
+                if (!m_chainman.ActiveChainstate().ActivateBestChain(a_recent_block)) {
+                    LogDebug(BCLog::NET, "failed to activate chain\n");
+                }
+            } catch (const kernel::FatalError& e) {
+                LogDebug(BCLog::NET, "failed to activate chain (%s)\n", e.what());
             }
         }
 

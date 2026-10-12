@@ -156,14 +156,16 @@ COutPoint ProcessBlock(const NodeContext& node, const std::shared_ptr<CBlock>& b
     auto& chainman{*Assert(node.chainman)};
     const auto old_height = WITH_LOCK(chainman.GetMutex(), return chainman.ActiveHeight());
     bool new_block;
-    BlockValidationStateCatcher bvsc{block->GetHash()};
-    node.validation_signals->RegisterValidationInterface(&bvsc);
-    const bool processed{chainman.ProcessNewBlock(block, true, true, &new_block)};
+    auto bvsc{std::make_shared<BlockValidationStateCatcher>(block->GetHash())};
+    bool processed;
+    {
+        const ScopedValidationInterface registration{*node.validation_signals, bvsc};
+        processed = chainman.ProcessNewBlock(block, true, true, &new_block);
+    }
     const bool duplicate{!new_block && processed};
     assert(!duplicate);
-    node.validation_signals->UnregisterValidationInterface(&bvsc);
     node.validation_signals->SyncWithValidationInterfaceQueue();
-    const bool was_valid{bvsc.m_state && bvsc.m_state->IsValid()};
+    const bool was_valid{bvsc->m_state && bvsc->m_state->IsValid()};
     assert(old_height + was_valid == WITH_LOCK(chainman.GetMutex(), return chainman.ActiveHeight()));
 
     if (was_valid) return {block->vtx[0]->GetHash(), 0};

@@ -12,12 +12,36 @@
 
 #include <atomic>
 #include <memory>
+#include <stdexcept>
 
 BOOST_FIXTURE_TEST_SUITE(validationinterface_tests, ChainTestingSetup)
 
 struct TestSubscriberNoop final : public CValidationInterface {
     void BlockChecked(const std::shared_ptr<const CBlock>&, const BlockValidationState&) override {}
 };
+
+BOOST_AUTO_TEST_CASE(scoped_subscriber_unregisters_on_exception)
+{
+    struct ThrowingSubscriber final : CValidationInterface {
+        void BlockChecked(const std::shared_ptr<const CBlock>&, const BlockValidationState&) override
+        {
+            throw std::runtime_error("callback failed");
+        }
+    };
+    for (const bool notify : {false, true}) {
+        std::weak_ptr<CValidationInterface> subscriber;
+        auto process = [&] {
+            auto callbacks{std::make_shared<ThrowingSubscriber>()};
+            subscriber = callbacks;
+            const ScopedValidationInterface registration{*m_node.validation_signals, callbacks};
+            if (notify) m_node.validation_signals->BlockChecked(std::make_shared<const CBlock>(), {});
+            throw std::runtime_error("processing failed");
+        };
+        BOOST_CHECK_THROW(process(), std::runtime_error);
+        BOOST_CHECK(subscriber.expired());
+        BOOST_CHECK_NO_THROW(m_node.validation_signals->BlockChecked(std::make_shared<const CBlock>(), {}));
+    }
+}
 
 BOOST_AUTO_TEST_CASE(unregister_validation_interface_race)
 {

@@ -5,12 +5,16 @@
 #ifndef BITCOIN_KERNEL_NOTIFICATIONS_INTERFACE_H
 #define BITCOIN_KERNEL_NOTIFICATIONS_INTERFACE_H
 
+#include <util/translation.h>
+
 #include <cstdint>
+#include <exception>
+#include <string>
+#include <utility>
 #include <variant>
 
 class CBlockIndex;
 enum class SynchronizationState;
-struct bilingual_str;
 
 namespace kernel {
 
@@ -60,6 +64,40 @@ public:
     //! causing more errors.
     virtual void fatalError(const bilingual_str& message) {}
 };
+
+//! An operational failure, separate from any block validation result.
+//!
+//! A FatalError can only be created through Raise(), which fires the
+//! fatalError notification. Holding a FatalError therefore denotes that
+//! the notification has already fired and must not be fired again while the
+//! error is propagated.
+//! Validation functions may also propagate other exceptions, such as allocation
+//! failures. Callers must not translate exceptions into invalid-block results.
+class FatalError : public std::exception
+{
+public:
+    //! Fire the fatalError notification once and throw the error.
+    [[noreturn]] static void Raise(Notifications& notifications, bilingual_str message)
+    {
+        notifications.fatalError(message);
+        throw FatalError{std::move(message.original)};
+    }
+
+    //! The untranslated error message for logging.
+    const char* what() const noexcept override { return m_message.c_str(); }
+
+    //! Replace the caller-facing diagnostic without raising another notification.
+    void ReplaceMessage(std::string message)
+    {
+        m_message = std::move(message);
+    }
+
+private:
+    explicit FatalError(std::string message) : m_message{std::move(message)} {}
+
+    std::string m_message;
+};
+
 } // namespace kernel
 
 #endif // BITCOIN_KERNEL_NOTIFICATIONS_INTERFACE_H

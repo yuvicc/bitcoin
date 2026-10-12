@@ -50,6 +50,7 @@ public:
     std::unique_ptr<CBlockTemplate> CreateNewTemplate(const BlockCreateOptions& options);
 
     /** Submit a block via ProcessNewBlock and capture validation state.
+     *  Operational failures throw and are never returned as rejection reasons.
      *  @return whether the block was accepted as a new valid block. */
     bool SubmitBlock(const std::shared_ptr<const CBlock>& block, std::string& reason, std::string& debug);
 

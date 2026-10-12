@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace kernel {
@@ -151,6 +152,8 @@ protected:
     virtual void ChainStateFlushed(const kernel::ChainstateRole& role, const CBlockLocator& locator) {}
     /**
      * Notifies listeners of a block validation result.
+     * Fatal processing errors are reported through Notifications::fatalError
+     * instead of this callback.
      * If the provided BlockValidationState IsValid, the provided block
      * is guaranteed to be the current best block at the time the
      * callback was generated (not necessarily now).
@@ -231,6 +234,27 @@ public:
     void ChainStateFlushed(const kernel::ChainstateRole&, const CBlockLocator&);
     void BlockChecked(const std::shared_ptr<const CBlock>&, const BlockValidationState&);
     void NewPoWValidBlock(const CBlockIndex *, const std::shared_ptr<const CBlock>&);
+};
+
+/** Register a temporary subscriber and unregister it even if processing throws.
+ * Queued notifications may retain the subscriber after unregistration. */
+class ScopedValidationInterface
+{
+    ValidationSignals& m_signals;
+    std::shared_ptr<CValidationInterface> m_callbacks;
+
+public:
+    ScopedValidationInterface(ValidationSignals& signals, std::shared_ptr<CValidationInterface> callbacks)
+        : m_signals{signals}, m_callbacks{std::move(callbacks)}
+    {
+        m_signals.RegisterSharedValidationInterface(m_callbacks);
+    }
+    ~ScopedValidationInterface()
+    {
+        m_signals.UnregisterSharedValidationInterface(m_callbacks);
+    }
+    ScopedValidationInterface(const ScopedValidationInterface&) = delete;
+    ScopedValidationInterface& operator=(const ScopedValidationInterface&) = delete;
 };
 
 #endif // BITCOIN_VALIDATIONINTERFACE_H

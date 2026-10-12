@@ -31,6 +31,7 @@
 #include <uint256.h>
 #include <undo.h>
 #include <util/check.h>
+#include <util/expected.h>
 #include <util/fs.h>
 #include <util/result.h>
 #include <util/signalinterrupt.h>
@@ -1013,9 +1014,7 @@ void btck_block_validation_state_destroy(btck_BlockValidationState* state)
 btck_ValidationMode btck_block_validation_state_get_validation_mode(const btck_BlockValidationState* block_validation_state_)
 {
     auto& block_validation_state = btck_BlockValidationState::get(block_validation_state_);
-    if (block_validation_state.IsValid()) return btck_ValidationMode_VALID;
-    if (block_validation_state.IsInvalid()) return btck_ValidationMode_INVALID;
-    return btck_ValidationMode_INTERNAL_ERROR;
+    return block_validation_state.IsValid() ? btck_ValidationMode_VALID : btck_ValidationMode_INVALID;
 }
 
 btck_BlockValidationResult btck_block_validation_state_get_block_validation_result(const btck_BlockValidationState* block_validation_state_)
@@ -1427,12 +1426,21 @@ int btck_chainstate_manager_process_block(
     const btck_Block* block,
     int* _new_block)
 {
-    bool new_block;
-    auto result = btck_ChainstateManager::get(chainman).m_chainman->ProcessNewBlock(btck_Block::get(block), /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/&new_block);
+    bool new_block{false};
+    int result{-1};
+    try {
+        if (btck_ChainstateManager::get(chainman).m_chainman->ProcessNewBlock(btck_Block::get(block), /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/&new_block)) {
+            result = 0;
+        }
+    } catch (const std::exception& e) {
+        LogError("Block processing failed: %s", e.what());
+    } catch (...) {
+        LogError("Block processing failed with an unknown exception");
+    }
     if (_new_block) {
         *_new_block = new_block ? 1 : 0;
     }
-    return result ? 0 : -1;
+    return result;
 }
 
 btck_BlockValidationState* btck_chainstate_manager_process_block_header(
@@ -1549,9 +1557,7 @@ void btck_block_header_destroy(btck_BlockHeader* header)
 btck_ValidationMode btck_tx_validation_state_get_validation_mode(const btck_TxValidationState* state_)
 {
     const auto& state = btck_TxValidationState::get(state_);
-    if (state.IsValid()) return btck_ValidationMode_VALID;
-    if (state.IsInvalid()) return btck_ValidationMode_INVALID;
-    return btck_ValidationMode_INTERNAL_ERROR;
+    return state.IsValid() ? btck_ValidationMode_VALID : btck_ValidationMode_INVALID;
 }
 
 btck_TxValidationState* btck_tx_validation_state_create()

@@ -85,9 +85,12 @@ public:
         WAIT_LOCK(m_mutex, lock);
         for (auto it = m_list.begin(); it != m_list.end();) {
             ++it->count;
-            {
+            try {
                 REVERSE_LOCK(lock, m_mutex);
                 f(*it->callbacks);
+            } catch (...) {
+                if (!--it->count) m_list.erase(it);
+                throw;
             }
             it = --it->count ? std::next(it) : m_list.erase(it);
         }

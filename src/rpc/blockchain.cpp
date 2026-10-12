@@ -4,7 +4,6 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <rpc/blockchain.h>
-#include <rpc/register.h> // IWYU pragma: associated
 
 #include <arith_uint256.h>
 #include <blockfilter.h>
@@ -27,6 +26,7 @@
 #include <index/coinstatsindex.h>
 #include <interfaces/types.h>
 #include <kernel/coinstats.h>
+#include <kernel/notifications_interface.h>
 #include <logging/timer.h>
 #include <net.h>
 #include <net_processing.h>
@@ -42,6 +42,7 @@
 #include <protocol.h>
 #include <rpc/protocol.h>
 #include <rpc/rawtransaction_util.h>
+#include <rpc/register.h> // IWYU pragma: associated
 #include <rpc/request.h>
 #include <rpc/server.h>
 #include <rpc/server_util.h>
@@ -1737,11 +1738,10 @@ static RPCMethod preciousblock()
         }
     }
 
-    BlockValidationState state;
-    chainman.ActiveChainstate().PreciousBlock(state, pblockindex);
-
-    if (!state.IsValid()) {
-        throw JSONRPCError(RPC_DATABASE_ERROR, state.ToString());
+    try {
+        (void)chainman.ActiveChainstate().PreciousBlock(pblockindex);
+    } catch (const kernel::FatalError& e) {
+        throw JSONRPCError(RPC_DATABASE_ERROR, e.what());
     }
 
     return UniValue::VNULL;
@@ -1750,7 +1750,6 @@ static RPCMethod preciousblock()
 }
 
 void InvalidateBlock(ChainstateManager& chainman, const uint256 block_hash) {
-    BlockValidationState state;
     CBlockIndex* pblockindex;
     {
         LOCK(chainman.GetMutex());
@@ -1759,14 +1758,11 @@ void InvalidateBlock(ChainstateManager& chainman, const uint256 block_hash) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
         }
     }
-    chainman.ActiveChainstate().InvalidateBlock(state, pblockindex);
-
-    if (state.IsValid()) {
-        chainman.ActiveChainstate().ActivateBestChain(state);
-    }
-
-    if (!state.IsValid()) {
-        throw JSONRPCError(RPC_DATABASE_ERROR, state.ToString());
+    try {
+        (void)chainman.ActiveChainstate().InvalidateBlock(pblockindex);
+        (void)chainman.ActiveChainstate().ActivateBestChain();
+    } catch (const kernel::FatalError& e) {
+        throw JSONRPCError(RPC_DATABASE_ERROR, e.what());
     }
 }
 
@@ -1807,11 +1803,10 @@ void ReconsiderBlock(ChainstateManager& chainman, uint256 block_hash) {
         chainman.RecalculateBestHeader();
     }
 
-    BlockValidationState state;
-    chainman.ActiveChainstate().ActivateBestChain(state);
-
-    if (!state.IsValid()) {
-        throw JSONRPCError(RPC_DATABASE_ERROR, state.ToString());
+    try {
+        (void)chainman.ActiveChainstate().ActivateBestChain();
+    } catch (const kernel::FatalError& e) {
+        throw JSONRPCError(RPC_DATABASE_ERROR, e.what());
     }
 }
 

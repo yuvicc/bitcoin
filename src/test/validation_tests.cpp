@@ -7,6 +7,7 @@
 #include <consensus/merkle.h>
 #include <core_io.h>
 #include <hash.h>
+#include <kernel/notifications_interface.h>
 #include <net.h>
 #include <signet.h>
 #include <uint256.h>
@@ -14,12 +15,68 @@
 #include <validation.h>
 
 #include <string>
+#include <type_traits>
+#include <utility>
 
 #include <test/util/setup_common.h>
 
 #include <boost/test/unit_test.hpp>
 
 BOOST_FIXTURE_TEST_SUITE(validation_tests, BasicTestingSetup)
+
+BOOST_AUTO_TEST_CASE(raised_fatal_error_exception)
+{
+    static_assert(std::is_base_of_v<std::exception, kernel::FatalError>);
+    static_assert(std::is_copy_constructible_v<kernel::FatalError>);
+
+    struct CountingNotifications : kernel::Notifications {
+        int fatal_errors{0};
+        void fatalError(const bilingual_str&) override { ++fatal_errors; }
+    } notifications;
+
+    bool returned{false};
+    auto propagate = [&] {
+        try {
+            kernel::FatalError::Raise(notifications, Untranslated("fatal error"));
+        } catch (const kernel::FatalError&) {
+            BOOST_CHECK_EQUAL(notifications.fatal_errors, 1);
+            throw;
+        }
+        returned = true;
+    };
+    BOOST_CHECK_EXCEPTION(propagate(), kernel::FatalError, [](const auto& e) {
+        return std::string{e.what()} == "fatal error";
+    });
+    BOOST_CHECK(!returned);
+    BOOST_CHECK_EQUAL(notifications.fatal_errors, 1);
+}
+
+BOOST_AUTO_TEST_CASE(fatal_error_caller_diagnostic)
+{
+    struct CountingNotifications : kernel::Notifications {
+        int fatal_errors{0};
+        std::string message;
+        void fatalError(const bilingual_str& error) override
+        {
+            ++fatal_errors;
+            message = error.original;
+        }
+    } notifications;
+
+    auto propagate = [&] {
+        try {
+            kernel::FatalError::Raise(notifications, Untranslated("disk failure"));
+        } catch (kernel::FatalError& e) {
+            e.ReplaceMessage("block write failed");
+            throw;
+        }
+    };
+    BOOST_CHECK_EXCEPTION(propagate(), kernel::FatalError, [](const auto& e) {
+        return std::string{e.what()} == "block write failed";
+    });
+    BOOST_CHECK_EQUAL(notifications.message, "disk failure");
+    BOOST_CHECK_EQUAL(notifications.fatal_errors, 1);
+}
 
 static void TestBlockSubsidyHalvings(const Consensus::Params& consensusParams)
 {

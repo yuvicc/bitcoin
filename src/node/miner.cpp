@@ -14,6 +14,7 @@
 #include <consensus/params.h>
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
+#include <kernel/notifications_interface.h>
 #include <node/blockstorage.h>
 #include <node/mining_args.h>
 #include <node/mining_types.h>
@@ -229,7 +230,7 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
     pblock->nNonce         = 0;
 
     if (m_options.test_block_validity) {
-        if (BlockValidationState state{TestBlockValidity(m_chainstate, *pblock, /*check_pow=*/false, /*check_merkle_root=*/false)}; !state.IsValid()) {
+        if (const auto state{TestBlockValidity(m_chainstate, *pblock, /*check_pow=*/false, /*check_merkle_root=*/false)}; !state.IsValid()) {
             throw std::runtime_error(strprintf("TestBlockValidity failed: %s", state.ToString()));
         }
     }

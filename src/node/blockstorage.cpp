@@ -925,8 +925,7 @@ FlatFilePos BlockManager::FindNextBlockPos(unsigned int nAddSize, unsigned int n
     bool out_of_space;
     size_t bytes_allocated = m_block_file_seq.Allocate(pos, nAddSize, out_of_space);
     if (out_of_space) {
-        m_opts.notifications.fatalError(_("Disk space is too low!"));
-        return {};
+        kernel::FatalError::Raise(m_opts.notifications, _("Disk space is too low!"));
     }
     if (bytes_allocated != 0 && IsPruneMode()) {
         m_check_for_pruning = true;
@@ -957,28 +956,26 @@ void BlockManager::UpdateBlockInfo(const CBlock& block, unsigned int nHeight, co
     m_dirty_fileinfo.insert(nFile);
 }
 
-bool BlockManager::FindUndoPos(BlockValidationState& state, int nFile, FlatFilePos& pos, unsigned int nAddSize)
+FlatFilePos BlockManager::FindUndoPos(int nFile, unsigned int nAddSize)
 {
     AssertLockHeld(::cs_main);
-    pos.nFile = nFile;
-
-    pos.nPos = m_blockfile_info[nFile].nUndoSize;
+    FlatFilePos pos{nFile, m_blockfile_info[nFile].nUndoSize};
     m_blockfile_info[nFile].nUndoSize += nAddSize;
     m_dirty_fileinfo.insert(nFile);
 
     bool out_of_space;
     size_t bytes_allocated = m_undo_file_seq.Allocate(pos, nAddSize, out_of_space);
     if (out_of_space) {
-        return FatalError(m_opts.notifications, state, _("Disk space is too low!"));
+        kernel::FatalError::Raise(m_opts.notifications, _("Disk space is too low!"));
     }
     if (bytes_allocated != 0 && IsPruneMode()) {
         m_check_for_pruning = true;
     }
 
-    return true;
+    return pos;
 }
 
-bool BlockManager::WriteBlockUndo(const CBlockUndo& blockundo, BlockValidationState& state, CBlockIndex& block)
+void BlockManager::WriteBlockUndo(const CBlockUndo& blockundo, CBlockIndex& block)
 {
     AssertLockHeld(::cs_main);
     const BlockfileType type = BlockfileTypeForHeight(block.nHeight);
@@ -986,18 +983,14 @@ bool BlockManager::WriteBlockUndo(const CBlockUndo& blockundo, BlockValidationSt
 
     // Write undo information to disk
     if (block.GetUndoPos().IsNull()) {
-        FlatFilePos pos;
         const auto blockundo_size{static_cast<uint32_t>(GetSerializeSize(blockundo))};
-        if (!FindUndoPos(state, block.nFile, pos, blockundo_size + UNDO_DATA_DISK_OVERHEAD)) {
-            LogError("FindUndoPos failed for %s while writing block undo", pos.ToString());
-            return false;
-        }
+        FlatFilePos pos{FindUndoPos(block.nFile, blockundo_size + UNDO_DATA_DISK_OVERHEAD)};
 
         // Open history file to append
         AutoFile file{OpenUndoFile(pos)};
         if (file.IsNull()) {
             LogError("OpenUndoFile failed for %s while writing block undo", pos.ToString());
-            return FatalError(m_opts.notifications, state, _("Failed to write undo data."));
+            kernel::FatalError::Raise(m_opts.notifications, _("Failed to write undo data."));
         }
         {
             BufferedWriter fileout{file};
@@ -1018,7 +1011,7 @@ bool BlockManager::WriteBlockUndo(const CBlockUndo& blockundo, BlockValidationSt
         // Make sure that the file is closed before we call `FlushUndoFile`.
         if (file.fclose() != 0) {
             LogError("Failed to close block undo file %s: %s", pos.ToString(), SysErrorString(errno));
-            return FatalError(m_opts.notifications, state, _("Failed to close block undo file."));
+            kernel::FatalError::Raise(m_opts.notifications, _("Failed to close block undo file."));
         }
 
         // rev files are written in block height order, whereas blk files are written as blocks come in (often out of order)
@@ -1043,8 +1036,6 @@ bool BlockManager::WriteBlockUndo(const CBlockUndo& blockundo, BlockValidationSt
         block.nStatus |= BLOCK_HAVE_UNDO;
         m_dirty_blockindex.insert(&block);
     }
-
-    return true;
 }
 
 bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::optional<uint256>& expected_hash) const
@@ -1150,15 +1141,10 @@ FlatFilePos BlockManager::WriteBlock(const CBlock& block, int nHeight)
     AssertLockHeld(::cs_main);
     const unsigned int block_size{static_cast<unsigned int>(GetSerializeSize(TX_WITH_WITNESS(block)))};
     FlatFilePos pos{FindNextBlockPos(block_size + STORAGE_HEADER_BYTES, nHeight, block.GetBlockTime())};
-    if (pos.IsNull()) {
-        LogError("FindNextBlockPos failed for %s while writing block", pos.ToString());
-        return FlatFilePos();
-    }
     AutoFile file{OpenBlockFile(pos, /*fReadOnly=*/false)};
     if (file.IsNull()) {
         LogError("OpenBlockFile failed for %s while writing block", pos.ToString());
-        m_opts.notifications.fatalError(_("Failed to write block."));
-        return FlatFilePos();
+        kernel::FatalError::Raise(m_opts.notifications, _("Failed to write block."));
     }
     {
         BufferedWriter fileout{file};
@@ -1172,8 +1158,7 @@ FlatFilePos BlockManager::WriteBlock(const CBlock& block, int nHeight)
 
     if (file.fclose() != 0) {
         LogError("Failed to close block file %s: %s", pos.ToString(), SysErrorString(errno));
-        m_opts.notifications.fatalError(_("Failed to close file when writing block."));
-        return FlatFilePos();
+        kernel::FatalError::Raise(m_opts.notifications, _("Failed to close file when writing block."));
     }
 
     return pos;

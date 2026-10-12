@@ -188,10 +188,6 @@ public:
             }
             return;
         }
-        case ValidationMode::INTERNAL_ERROR: {
-            std::cout << "Internal error" << std::endl;
-            return;
-        }
         }
     }
 
@@ -1172,6 +1168,48 @@ BOOST_AUTO_TEST_CASE(btck_chainman_in_memory_tests)
     BOOST_CHECK(!fs::exists(in_memory_test_directory.m_directory / "chainstate"));
 
     BOOST_CHECK(context.interrupt());
+}
+
+BOOST_AUTO_TEST_CASE(btck_process_block_operational_failure)
+{
+    TestDirectory test_directory{"operational_failure_test_bitcoin_kernel"};
+    struct CountingNotifications : TestKernelNotifications {
+        int fatal_errors{0};
+        void FatalErrorHandler(std::string_view) override { ++fatal_errors; }
+    };
+    struct CountingValidationInterface : TestValidationInterface {
+        int checked{0};
+        void BlockChecked(Block, BlockValidationStateView) override { ++checked; }
+    };
+    auto notifications{std::make_shared<CountingNotifications>()};
+    auto validation{std::make_shared<CountingValidationInterface>()};
+    auto context{create_context(notifications, ChainType::REGTEST, validation)};
+    auto chainman{create_chainman(test_directory, false, false, false, false, context)};
+    const auto checked_before{validation->checked};
+    const auto height_before{chainman->GetChain().Height()};
+
+    const auto path{test_directory.m_directory / "blocks" / "blk00000.dat"};
+    const auto backup{test_directory.m_directory / "blocks" / "blk00000.dat.backup"};
+    fs::rename(path, backup);
+    struct RestoreFile {
+        fs::path path;
+        fs::path backup;
+        ~RestoreFile()
+        {
+            fs::remove(path);
+            fs::rename(backup, path);
+        }
+    } restore{path, backup};
+    fs::create_directory(path);
+
+    Block block{hex_string_to_byte_vec(REGTEST_BLOCK_DATA.front())};
+    bool new_block{false};
+    // The C boundary catches the exception and reports processing failure.
+    // It must not report that this valid block violates consensus.
+    BOOST_CHECK_NO_THROW(BOOST_CHECK(!chainman->ProcessBlock(block, &new_block)));
+    BOOST_CHECK_EQUAL(notifications->fatal_errors, 1);
+    BOOST_CHECK_EQUAL(validation->checked, checked_before);
+    BOOST_CHECK_EQUAL(chainman->GetChain().Height(), height_before);
 }
 
 BOOST_AUTO_TEST_CASE(btck_chainman_regtest_tests)

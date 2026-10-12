@@ -7,8 +7,10 @@
 #include <consensus/consensus.h>
 #include <consensus/merkle.h>
 #include <consensus/validation.h>
+#include <kernel/notifications_interface.h>
 #include <node/block_template_manager.h>
 #include <node/blockstorage.h>
+#include <node/kernel_notifications.h>
 #include <node/miner.h>
 #include <pow.h>
 #include <primitives/block.h>
@@ -19,6 +21,7 @@
 #include <test/util/common.h>
 #include <test/util/script.h>
 #include <test/util/setup_common.h>
+#include <test/util/time.h>
 #include <txmempool.h>
 #include <uint256.h>
 #include <util/check.h>
@@ -29,8 +32,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <optional>
 #include <span>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -48,6 +54,187 @@ struct MinerTestingSetup : public RegTestingSetup {
 } // namespace validation_block_tests
 
 BOOST_FIXTURE_TEST_SUITE(validation_block_tests, MinerTestingSetup)
+
+namespace {
+enum class FatalSubmissionFailure { BLOCK_WRITE, UNDO_WRITE, AFTER_CHECK };
+
+void TestFatalBlockSubmission(MinerTestingSetup& setup, FatalSubmissionFailure failure)
+{
+    auto& node{setup.m_node};
+    FakeNodeClock clock{};
+    auto& chainman{*node.chainman};
+    auto block{setup.GoodBlock(chainman.GetParams().GenesisBlock().GetHash())};
+    node.notifications->m_shutdown_on_fatal_error = false;
+
+    // Restore the block files before the testing setup flushes its chainstate.
+    struct FileObstruction {
+        fs::path path;
+        fs::path backup;
+        bool obstructed{false};
+        bool had_file{false};
+
+        void Obstruct(bool replace_with_directory)
+        {
+            had_file = fs::exists(path);
+            if (had_file) fs::rename(path, backup);
+            obstructed = true;
+            if (replace_with_directory) fs::create_directory(path);
+        }
+        ~FileObstruction()
+        {
+            if (!obstructed) return;
+            fs::remove(path);
+            if (had_file) fs::rename(backup, path);
+        }
+    } obstruction;
+
+    const auto blocks_dir{chainman.m_blockman.GetBlockPosFilename(FlatFilePos{0, 0}).parent_path()};
+    obstruction.path = failure == FatalSubmissionFailure::AFTER_CHECK ? blocks_dir :
+        blocks_dir / (failure == FatalSubmissionFailure::BLOCK_WRITE ? "blk00000.dat" : "rev00000.dat");
+    obstruction.backup = obstruction.path + ".backup";
+
+    struct Subscriber final : CValidationInterface {
+        int calls{0};
+        std::function<void()> on_valid;
+
+        void BlockChecked(const std::shared_ptr<const CBlock>&, const BlockValidationState& state) override
+        {
+            ++calls;
+            BOOST_CHECK(state.IsValid());
+            if (state.IsValid() && on_valid) on_valid();
+        }
+    };
+    auto subscriber{std::make_shared<Subscriber>()};
+    if (failure == FatalSubmissionFailure::AFTER_CHECK) {
+        // Force the periodic flush after connection to fail, after BlockChecked
+        // has already reported a valid block.
+        clock += 71min;
+        subscriber->on_valid = [&] { obstruction.Obstruct(/*replace_with_directory=*/false); };
+    } else {
+        obstruction.Obstruct(/*replace_with_directory=*/true);
+    }
+    const ScopedValidationInterface registration{*node.validation_signals, subscriber};
+    std::string reason, debug, error;
+    bool entered_valid_branch{false};
+    bool entered_invalid_branch{false};
+    try {
+        if (Assert(node.block_template_manager)->SubmitBlock(block, reason, debug)) {
+            entered_valid_branch = true;
+        } else {
+            entered_invalid_branch = true;
+        }
+        BOOST_ERROR("Operational failure must throw");
+    } catch (const kernel::FatalError& e) {
+        error = e.what();
+    }
+
+    BOOST_CHECK(!entered_valid_branch);
+    BOOST_CHECK(!entered_invalid_branch);
+    BOOST_CHECK(reason.empty());
+    {
+        LOCK(cs_main);
+        const auto* index{chainman.m_blockman.LookupBlockIndex(block->GetHash())};
+        BOOST_REQUIRE(index);
+        BOOST_CHECK_EQUAL(index->nStatus & (BLOCK_FAILED_VALID | BLOCK_FAILED_CHILD), 0);
+    }
+    BOOST_CHECK_EQUAL(subscriber->calls, failure == FatalSubmissionFailure::AFTER_CHECK ? 1 : 0);
+    BOOST_CHECK(debug.empty());
+    if (failure == FatalSubmissionFailure::AFTER_CHECK) {
+        BOOST_CHECK(error.starts_with("System error while flushing:"));
+    } else {
+        const std::string expected{failure == FatalSubmissionFailure::BLOCK_WRITE ?
+            "AcceptBlock: Failed to find position to write new block to disk" : "Failed to write undo data."};
+        BOOST_CHECK_EQUAL(error, expected);
+    }
+}
+} // namespace
+
+BOOST_AUTO_TEST_CASE(submit_block_write_failure)
+{
+    TestFatalBlockSubmission(*this, FatalSubmissionFailure::BLOCK_WRITE);
+}
+
+BOOST_AUTO_TEST_CASE(submit_block_undo_failure)
+{
+    TestFatalBlockSubmission(*this, FatalSubmissionFailure::UNDO_WRITE);
+}
+
+#ifndef WIN32
+// Windows does not allow moving the blocks directory while its files are open.
+BOOST_AUTO_TEST_CASE(submit_block_flush_failure)
+{
+    TestFatalBlockSubmission(*this, FatalSubmissionFailure::AFTER_CHECK);
+}
+#endif // WIN32
+
+BOOST_AUTO_TEST_CASE(validation_results_are_separate_from_exceptions)
+{
+    auto& chainman{*m_node.chainman};
+    auto& chainstate{chainman.ActiveChainstate()};
+    const auto valid{GoodBlock(chainman.GetParams().GenesisBlock().GetHash())};
+    const auto invalid{BadBlock(chainman.GetParams().GenesisBlock().GetHash())};
+
+    LOCK(cs_main);
+    BOOST_CHECK(TestBlockValidity(chainstate, *valid, true, true).IsValid());
+    BOOST_CHECK(TestBlockValidity(chainstate, *invalid, true, true).IsInvalid());
+
+    // A merkle mismatch in a block loaded for connection is a local corruption
+    // error, rather than evidence that the original block violates consensus.
+    CBlock corrupt{*valid};
+    corrupt.fChecked = false;
+    corrupt.m_checked_merkle_root = false;
+    corrupt.m_checked_witness_commitment = false;
+    corrupt.vtx.push_back(corrupt.vtx.front());
+    auto* index{chainman.m_blockman.LookupBlockIndex(valid->GetHash())};
+    BOOST_REQUIRE(index);
+    CCoinsViewCache view{&chainstate.CoinsTip()};
+    m_node.notifications->m_shutdown_on_fatal_error = false;
+    BOOST_CHECK_THROW((void)chainstate.ConnectBlock(corrupt, index, view), kernel::FatalError);
+    BOOST_CHECK_EQUAL(index->nStatus & (BLOCK_FAILED_VALID | BLOCK_FAILED_CHILD), 0);
+}
+
+BOOST_AUTO_TEST_CASE(activation_exception_keeps_mempool_consistent)
+{
+    auto& chainman{*m_node.chainman};
+    const auto genesis{chainman.GetParams().GenesisBlock().GetHash()};
+    auto first{GoodBlock(genesis)};
+    BOOST_REQUIRE(chainman.ProcessNewBlock(first, true, true, nullptr));
+    auto second{GoodBlock(first->GetHash())};
+    BOOST_REQUIRE(chainman.ProcessNewBlock(second, true, true, nullptr));
+
+    // Store a longer fork without activating it yet.
+    const auto fork1{GoodBlock(genesis)};
+    const auto fork2{GoodBlock(fork1->GetHash())};
+    const auto fork3{GoodBlock(fork2->GetHash())};
+    {
+        LOCK(cs_main);
+        for (const auto& block : {fork1, fork2, fork3}) {
+            BOOST_REQUIRE(chainman.AcceptBlock(block, nullptr, true, nullptr, nullptr, true).IsValid());
+        }
+    }
+    struct ThrowingSubscriber final : CValidationInterface {
+        void BlockChecked(const std::shared_ptr<const CBlock>&, const BlockValidationState& state) override
+        {
+            BOOST_CHECK(state.IsValid());
+            throw std::runtime_error("validation callback failed");
+        }
+    };
+    {
+        const ScopedValidationInterface registration{*m_node.validation_signals, std::make_shared<ThrowingSubscriber>()};
+        // Both old blocks have been disconnected when the callback throws. The
+        // disconnect pool must be drained before its destructor runs.
+        BOOST_CHECK_EXCEPTION((void)chainman.ActiveChainstate().ActivateBestChain(), std::runtime_error, [](const auto& e) {
+            return std::string{e.what()} == "validation callback failed";
+        });
+    }
+    LOCK(cs_main);
+    BOOST_CHECK_EQUAL(chainman.ActiveChain().Tip()->GetBlockHash(), genesis);
+    for (const auto& block : {fork1, fork2, fork3}) {
+        const auto* index{chainman.m_blockman.LookupBlockIndex(block->GetHash())};
+        BOOST_REQUIRE(index);
+        BOOST_CHECK_EQUAL(index->nStatus & (BLOCK_FAILED_VALID | BLOCK_FAILED_CHILD), 0);
+    }
+}
 
 struct TestSubscriber final : public CValidationInterface {
     uint256 m_expected_tip;
@@ -180,7 +367,8 @@ BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
 
     bool ignored;
     // Connect the genesis block and drain any outstanding events
-    BOOST_CHECK(Assert(m_node.chainman)->ProcessNewBlock(std::make_shared<CBlock>(Params().GenesisBlock()), true, true, &ignored));
+    auto res{Assert(m_node.chainman)->ProcessNewBlock(std::make_shared<CBlock>(Params().GenesisBlock()), true, true, &ignored)};
+    BOOST_CHECK(res);
     m_node.validation_signals->SyncWithValidationInterfaceQueue();
 
     // subscribe to events (this subscriber will validate event ordering)
@@ -203,14 +391,14 @@ BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
             FastRandomContext insecure;
             for (int i = 0; i < 1000; i++) {
                 const auto& block = blocks[insecure.randrange(blocks.size() - 1)];
-                Assert(m_node.chainman)->ProcessNewBlock(block, true, true, &ignored);
+                (void)Assert(m_node.chainman)->ProcessNewBlock(block, true, true, &ignored);
             }
 
             // to make sure that eventually we process the full chain - do it here
             for (const auto& block : blocks) {
                 if (block->vtx.size() == 1) {
-                    bool processed = Assert(m_node.chainman)->ProcessNewBlock(block, true, true, &ignored);
-                    assert(processed);
+                    auto res{Assert(m_node.chainman)->ProcessNewBlock(block, true, true, &ignored)};
+                    assert(res);
                 }
             }
         });
@@ -248,7 +436,8 @@ BOOST_AUTO_TEST_CASE(mempool_locks_reorg)
 {
     bool ignored;
     auto ProcessBlock = [&](std::shared_ptr<const CBlock> block) -> bool {
-        return Assert(m_node.chainman)->ProcessNewBlock(block, /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/&ignored);
+        auto res{Assert(m_node.chainman)->ProcessNewBlock(block, /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/&ignored)};
+        return res;
     };
 
     // Process all mined blocks
