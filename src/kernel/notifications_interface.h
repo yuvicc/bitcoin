@@ -5,12 +5,16 @@
 #ifndef BITCOIN_KERNEL_NOTIFICATIONS_INTERFACE_H
 #define BITCOIN_KERNEL_NOTIFICATIONS_INTERFACE_H
 
+#include <util/translation.h>
+
 #include <cstdint>
+#include <exception>
+#include <string>
+#include <utility>
 #include <variant>
 
 class CBlockIndex;
 enum class SynchronizationState;
-struct bilingual_str;
 
 namespace kernel {
 
@@ -59,6 +63,35 @@ public:
     //! the user, or triggering an early shutdown as a precaution against
     //! causing more errors.
     virtual void fatalError(const bilingual_str& message) {}
+};
+
+//! Exception thrown when kernel code hits an error it cannot recover from.
+//!
+//! A FatalError can only be created through Raise(), which fires the
+//! fatalError notification before throwing. Catching a FatalError therefore
+//! denotes that the notification has already fired and must not be fired
+//! again.
+//!
+//! This deliberately derives from std::exception rather than
+//! std::runtime_error, so that existing handlers which translate
+//! std::runtime_error into a fatal error do not raise it a second time.
+class FatalError : public std::exception
+{
+public:
+    //! Fire the fatalError notification and throw.
+    [[noreturn]] static void Raise(Notifications& notifications, bilingual_str message)
+    {
+        notifications.fatalError(message);
+        throw FatalError{std::move(message.original)};
+    }
+
+    //! The untranslated error message.
+    const char* what() const noexcept override { return m_message.c_str(); }
+
+private:
+    explicit FatalError(std::string message) : m_message{std::move(message)} {}
+
+    std::string m_message;
 };
 } // namespace kernel
 

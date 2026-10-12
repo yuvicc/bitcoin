@@ -7,19 +7,55 @@
 #include <consensus/merkle.h>
 #include <core_io.h>
 #include <hash.h>
+#include <kernel/notifications_interface.h>
 #include <net.h>
 #include <signet.h>
 #include <uint256.h>
 #include <util/chaintype.h>
 #include <validation.h>
 
+#include <stdexcept>
 #include <string>
+#include <type_traits>
 
+#include <test/util/common.h>
 #include <test/util/setup_common.h>
 
 #include <boost/test/unit_test.hpp>
 
 BOOST_FIXTURE_TEST_SUITE(validation_tests, BasicTestingSetup)
+
+BOOST_AUTO_TEST_CASE(fatal_error_raise)
+{
+    struct CountingNotifications : kernel::Notifications {
+        int fatal_errors{0};
+        std::string message;
+        void fatalError(const bilingual_str& error) override
+        {
+            ++fatal_errors;
+            message = error.original;
+        }
+    } notifications;
+
+    BOOST_CHECK_EXCEPTION(kernel::FatalError::Raise(notifications, Untranslated("disk failure")),
+                          kernel::FatalError, HasReason("disk failure"));
+    BOOST_CHECK_EQUAL(notifications.fatal_errors, 1);
+    BOOST_CHECK_EQUAL(notifications.message, "disk failure");
+
+    // Propagating and rethrowing does not fire the notification again.
+    BOOST_CHECK_EXCEPTION(
+        try {
+            kernel::FatalError::Raise(notifications, Untranslated("fatal error"));
+        } catch (const kernel::FatalError&) {
+            throw;
+        },
+        kernel::FatalError, HasReason("fatal error"));
+    BOOST_CHECK_EQUAL(notifications.fatal_errors, 2);
+
+    // A FatalError is not a std::runtime_error, so handlers translating
+    // std::runtime_error into a fatal error do not catch it.
+    static_assert(!std::is_base_of_v<std::runtime_error, kernel::FatalError>);
+}
 
 static void TestBlockSubsidyHalvings(const Consensus::Params& consensusParams)
 {
