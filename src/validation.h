@@ -104,8 +104,6 @@ extern const std::vector<std::string> CHECKLEVEL_DOC;
 
 CAmount GetBlockSubsidy(int nHeight, const Consensus::Params& consensusParams);
 
-bool FatalError(kernel::Notifications& notifications, BlockValidationState& state, const bilingual_str& message);
-
 /** Prune block files up to a given height */
 void PruneBlockFilesManual(Chainstate& active_chainstate, int nManualPruneHeight);
 
@@ -1281,6 +1279,7 @@ public:
      *                               index then this parameter has no effect)
      * @param[out]  new_block A boolean which is set to indicate if the block was first received via this call
      * @returns     If the block was processed, independently of block validity
+     * @throws      kernel::FatalError if a system error occurred while processing the block
      */
     bool ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block) LOCKS_EXCLUDED(cs_main);
 
