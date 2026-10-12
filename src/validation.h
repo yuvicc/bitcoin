@@ -729,8 +729,8 @@ public:
     size_t m_coinstip_cache_size_bytes{0};
 
     //! Resize the CoinsViews caches dynamically and flush state to disk.
-    //! @returns true unless an error occurred during the flush.
-    bool ResizeCoinsCaches(size_t coinstip_size, size_t coinsdb_size)
+    //! @throws kernel::FatalError if an error occurred during the flush.
+    void ResizeCoinsCaches(size_t coinstip_size, size_t coinsdb_size)
         EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     /**
@@ -742,10 +742,9 @@ public:
      * If FlushStateMode::NONE is used, then FlushStateToDisk(...) won't do anything
      * besides checking if we need to prune.
      *
-     * @returns true unless a system error occurred
+     * @throws kernel::FatalError if a system error occurred
      */
-    bool FlushStateToDisk(
-        BlockValidationState& state,
+    void FlushStateToDisk(
         FlushStateMode mode,
         int nManualPruneHeight = 0);
 
