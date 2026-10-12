@@ -10,6 +10,7 @@
 #include <consensus/validation.h>
 #include <interfaces/types.h>
 #include <kernel/chainparams.h>
+#include <kernel/notifications_interface.h>
 #include <node/kernel_notifications.h>
 #include <node/miner.h>
 #include <node/mining_args.h>
@@ -85,7 +86,17 @@ bool BlockTemplateManager::SubmitBlock(const std::shared_ptr<const CBlock>& bloc
     auto sc = std::make_shared<SubmitBlockStateCatcher>(block->GetHash());
     CHECK_NONFATAL(m_chainman.m_options.signals)->RegisterSharedValidationInterface(sc);
     bool new_block;
-    bool accepted = m_chainman.ProcessNewBlock(block, /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/&new_block);
+    bool accepted;
+    try {
+        accepted = m_chainman.ProcessNewBlock(block, /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/&new_block);
+    } catch (const kernel::FatalError& e) {
+        CHECK_NONFATAL(m_chainman.m_options.signals)->UnregisterSharedValidationInterface(sc);
+        reason = e.what();
+        return false;
+    } catch (...) {
+        CHECK_NONFATAL(m_chainman.m_options.signals)->UnregisterSharedValidationInterface(sc);
+        throw;
+    }
     // No queue drain is needed. The BlockChecked notification used above is
     // emitted synchronously by ProcessNewBlock, unlike most validation signals.
     CHECK_NONFATAL(m_chainman.m_options.signals)->UnregisterSharedValidationInterface(sc);

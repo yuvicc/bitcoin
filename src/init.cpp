@@ -38,6 +38,7 @@
 #include <kernel/blockmanager_opts.h>
 #include <kernel/caches.h>
 #include <kernel/chainstatemanager_opts.h>
+#include <kernel/notifications_interface.h>
 #include <kernel/checks.h>
 #include <kernel/context.h>
 #include <kernel/notifications_interface.h>
@@ -2096,13 +2097,21 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     node.background_init_thread = std::thread(&util::TraceThread, "initload", [=, &chainman, &args, &kernel_notifications, &node] {
         ScheduleBatchPriority();
         // Import blocks and ActivateBestChain()
-        ImportBlocks(chainman, vImportFiles);
-        // An interrupted import may return without activating genesis. Wake
-        // the init thread's genesis wait, which is otherwise only notified
-        // on blockTip, and that never fires when the import was interrupted
-        // before activating genesis. This wakeup lets the wait observe the
-        // shutdown request.
+        bool import_failed{false};
+        try {
+            ImportBlocks(chainman, vImportFiles);
+        } catch (const kernel::FatalError& e) {
+            // The fatal error notification has already requested a shutdown.
+            LogError("Block import failed: %s", e.what());
+            import_failed = true;
+        }
+        // An interrupted or failed import may return without activating
+        // genesis. Wake the init thread's genesis wait, which is otherwise only
+        // notified on blockTip, and that never fires when the import was
+        // stopped before activating genesis. This wakeup lets the wait observe
+        // the shutdown request.
         WITH_LOCK(kernel_notifications.m_tip_block_mutex, kernel_notifications.m_tip_block_cv.notify_all());
+        if (import_failed) return;
         WITH_LOCK(::cs_main, chainman.UpdateIBDStatus());
         if (args.GetBoolArg("-stopafterblockimport", DEFAULT_STOPAFTERBLOCKIMPORT)) {
             LogInfo("Stopping after block import");

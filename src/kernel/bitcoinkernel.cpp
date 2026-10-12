@@ -1427,8 +1427,14 @@ int btck_chainstate_manager_process_block(
     const btck_Block* block,
     int* _new_block)
 {
-    bool new_block;
-    auto result = btck_ChainstateManager::get(chainman).m_chainman->ProcessNewBlock(btck_Block::get(block), /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/&new_block);
+    bool new_block{false};
+    bool result{false};
+    try {
+        result = btck_ChainstateManager::get(chainman).m_chainman->ProcessNewBlock(btck_Block::get(block), /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/&new_block);
+    } catch (const kernel::FatalError& e) {
+        // The fatal_error notification has already been sent.
+        LogError("Failed to process block: %s", e.what());
+    }
     if (_new_block) {
         *_new_block = new_block ? 1 : 0;
     }

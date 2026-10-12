@@ -3207,6 +3207,7 @@ bool Chainstate::ActivateBestChainStep(BlockValidationState& state, CBlockIndex&
     // Disconnect active blocks which are no longer in the best chain.
     bool fBlocksDisconnected = false;
     DisconnectedBlockTransactions disconnectpool{MAX_DISCONNECTED_TX_POOL_BYTES};
+    try {
     while (m_chain.Tip() && m_chain.Tip() != pindexFork) {
         if (!DisconnectTip(state, &disconnectpool)) {
             // This is likely a fatal error, but keep the mempool consistent,
@@ -3267,6 +3268,13 @@ bool Chainstate::ActivateBestChainStep(BlockValidationState& state, CBlockIndex&
                 }
             }
         }
+    }
+    } catch (const kernel::FatalError&) {
+        // A system error occurred (disk space, database error, ...).
+        // Make the mempool consistent with the current tip, just in case
+        // any observers try to use it before shutdown.
+        MaybeUpdateMempoolForReorg(disconnectpool, false);
+        throw;
     }
 
     if (fBlocksDisconnected) {
@@ -3588,7 +3596,13 @@ bool Chainstate::InvalidateBlock(BlockValidationState& state, CBlockIndex* const
         // ActivateBestChain considers blocks already in m_chain
         // unconditionally valid already, so force disconnect away from it.
         DisconnectedBlockTransactions disconnectpool{MAX_DISCONNECTED_TX_POOL_BYTES};
-        bool ret = DisconnectTip(state, &disconnectpool);
+        bool ret;
+        try {
+            ret = DisconnectTip(state, &disconnectpool);
+        } catch (const kernel::FatalError&) {
+            MaybeUpdateMempoolForReorg(disconnectpool, /*fAddToMempool=*/false);
+            throw;
+        }
         // DisconnectTip will add transactions to disconnectpool.
         // Adjust the mempool to be consistent with the new tip, adding
         // transactions back to the mempool if disconnecting was successful,
@@ -5120,6 +5134,10 @@ void ChainstateManager::LoadExternalBlockFile(
                         NotifyHeaderTip();
                     }
                 }
+            } catch (const kernel::FatalError&) {
+                // Fatal errors were already reported and must not be mistaken
+                // for unexpected data in the block file.
+                throw;
             } catch (const std::exception& e) {
                 // historical bugs added extra data to the block files that does not deserialize cleanly.
                 // commonly this data is between readable blocks, but it does not really matter. such data is not fatal to the import process.

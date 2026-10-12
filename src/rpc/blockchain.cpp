@@ -27,6 +27,7 @@
 #include <index/coinstatsindex.h>
 #include <interfaces/types.h>
 #include <kernel/coinstats.h>
+#include <kernel/notifications_interface.h>
 #include <logging/timer.h>
 #include <net.h>
 #include <net_processing.h>
@@ -1738,7 +1739,11 @@ static RPCMethod preciousblock()
     }
 
     BlockValidationState state;
-    chainman.ActiveChainstate().PreciousBlock(state, pblockindex);
+    try {
+        chainman.ActiveChainstate().PreciousBlock(state, pblockindex);
+    } catch (const kernel::FatalError& e) {
+        throw JSONRPCError(RPC_DATABASE_ERROR, e.what());
+    }
 
     if (!state.IsValid()) {
         throw JSONRPCError(RPC_DATABASE_ERROR, state.ToString());
@@ -1759,10 +1764,14 @@ void InvalidateBlock(ChainstateManager& chainman, const uint256 block_hash) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
         }
     }
-    chainman.ActiveChainstate().InvalidateBlock(state, pblockindex);
+    try {
+        chainman.ActiveChainstate().InvalidateBlock(state, pblockindex);
 
-    if (state.IsValid()) {
-        chainman.ActiveChainstate().ActivateBestChain(state);
+        if (state.IsValid()) {
+            chainman.ActiveChainstate().ActivateBestChain(state);
+        }
+    } catch (const kernel::FatalError& e) {
+        throw JSONRPCError(RPC_DATABASE_ERROR, e.what());
     }
 
     if (!state.IsValid()) {
@@ -1808,7 +1817,11 @@ void ReconsiderBlock(ChainstateManager& chainman, uint256 block_hash) {
     }
 
     BlockValidationState state;
-    chainman.ActiveChainstate().ActivateBestChain(state);
+    try {
+        chainman.ActiveChainstate().ActivateBestChain(state);
+    } catch (const kernel::FatalError& e) {
+        throw JSONRPCError(RPC_DATABASE_ERROR, e.what());
+    }
 
     if (!state.IsValid()) {
         throw JSONRPCError(RPC_DATABASE_ERROR, state.ToString());
