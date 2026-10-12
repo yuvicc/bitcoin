@@ -1738,15 +1738,10 @@ static RPCMethod preciousblock()
         }
     }
 
-    BlockValidationState state;
     try {
-        chainman.ActiveChainstate().PreciousBlock(state, pblockindex);
+        chainman.ActiveChainstate().PreciousBlock(pblockindex);
     } catch (const kernel::FatalError& e) {
         throw JSONRPCError(RPC_DATABASE_ERROR, e.what());
-    }
-
-    if (!state.IsValid()) {
-        throw JSONRPCError(RPC_DATABASE_ERROR, state.ToString());
     }
 
     return UniValue::VNULL;
@@ -1755,7 +1750,6 @@ static RPCMethod preciousblock()
 }
 
 void InvalidateBlock(ChainstateManager& chainman, const uint256 block_hash) {
-    BlockValidationState state;
     CBlockIndex* pblockindex;
     {
         LOCK(chainman.GetMutex());
@@ -1765,17 +1759,10 @@ void InvalidateBlock(ChainstateManager& chainman, const uint256 block_hash) {
         }
     }
     try {
-        chainman.ActiveChainstate().InvalidateBlock(state, pblockindex);
-
-        if (state.IsValid()) {
-            chainman.ActiveChainstate().ActivateBestChain();
-        }
+        chainman.ActiveChainstate().InvalidateBlock(pblockindex);
+        chainman.ActiveChainstate().ActivateBestChain();
     } catch (const kernel::FatalError& e) {
         throw JSONRPCError(RPC_DATABASE_ERROR, e.what());
-    }
-
-    if (!state.IsValid()) {
-        throw JSONRPCError(RPC_DATABASE_ERROR, state.ToString());
     }
 }
 

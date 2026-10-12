@@ -803,13 +803,18 @@ public:
     /** Mark a block as precious and reorganize.
      *
      * May not be called in a validationinterface callback.
+     *
+     * @throws kernel::FatalError if a system error occurred
      */
-    bool PreciousBlock(BlockValidationState& state, CBlockIndex* pindex)
+    bool PreciousBlock(CBlockIndex* pindex)
         EXCLUSIVE_LOCKS_REQUIRED(!m_chainstate_mutex)
         LOCKS_EXCLUDED(::cs_main);
 
-    /** Mark a block as invalid. */
-    bool InvalidateBlock(BlockValidationState& state, CBlockIndex* pindex)
+    /** Mark a block as invalid.
+     *
+     * @throws kernel::FatalError if a system error occurred
+     */
+    bool InvalidateBlock(CBlockIndex* pindex)
         EXCLUSIVE_LOCKS_REQUIRED(!m_chainstate_mutex)
         LOCKS_EXCLUDED(::cs_main);
 

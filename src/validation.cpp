@@ -3493,7 +3493,7 @@ bool Chainstate::ActivateBestChain(std::shared_ptr<const CBlock> pblock)
     return true;
 }
 
-bool Chainstate::PreciousBlock(BlockValidationState& state, CBlockIndex* pindex)
+bool Chainstate::PreciousBlock(CBlockIndex* pindex)
 {
     AssertLockNotHeld(m_chainstate_mutex);
     AssertLockNotHeld(::cs_main);
@@ -3524,7 +3524,7 @@ bool Chainstate::PreciousBlock(BlockValidationState& state, CBlockIndex* pindex)
     return ActivateBestChain(std::shared_ptr<const CBlock>());
 }
 
-bool Chainstate::InvalidateBlock(BlockValidationState& state, CBlockIndex* const pindex)
+bool Chainstate::InvalidateBlock(CBlockIndex* const pindex)
 {
     AssertLockNotHeld(m_chainstate_mutex);
     AssertLockNotHeld(::cs_main);
