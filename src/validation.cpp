@@ -2303,12 +2303,13 @@ script_verify_flags GetBlockScriptFlags(const CBlockIndex& block_index, const Ch
 
 /** Apply the effects of this block (with given index) on the UTXO set represented by coins.
  *  Validity checks that depend on the UTXO set are also done; ConnectBlock()
- *  can fail if those validity checks fail (among other reasons). */
-bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, CBlockIndex* pindex,
-                               CCoinsViewCache& view, bool fJustCheck)
+ *  returns an invalid state if those validity checks fail. */
+BlockValidationState Chainstate::ConnectBlock(const CBlock& block, CBlockIndex* pindex,
+                                               CCoinsViewCache& view, bool fJustCheck)
 {
     AssertLockHeld(cs_main);
     assert(pindex);
+    BlockValidationState state;
 
     uint256 block_hash{block.GetHash()};
     assert(*pindex->phashBlock == block_hash);
@@ -2334,10 +2335,10 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
             // We don't write down blocks to disk if they may have been
             // corrupted, so this should be impossible unless we're having hardware
             // problems.
-            return FatalError(m_chainman.GetNotifications(), state, _("Corrupt block found indicating potential hardware failure."));
+            kernel::FatalError::Raise(m_chainman.GetNotifications(), _("Corrupt block found indicating potential hardware failure."));
         }
         LogError("%s: Consensus::CheckBlock: %s\n", __func__, state.ToString());
-        return false;
+        return state;
     }
 
     // verify that the view's current state corresponds to the previous block
@@ -2351,7 +2352,7 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     if (block_hash == params.GetConsensus().hashGenesisBlock) {
         if (!fJustCheck)
             view.SetBestBlock(pindex->GetBlockHash());
-        return true;
+        return state;
     }
 
     const char* script_check_reason;
@@ -2631,7 +2632,7 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     }
     if (!state.IsValid()) {
         LogInfo("Block validation error: %s", state.ToString());
-        return false;
+        return state;
     }
     const auto time_4{SteadyClock::now()};
     m_chainman.time_verify += time_4 - time_2;
@@ -2642,7 +2643,7 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
              Ticks<MillisecondsDouble>(m_chainman.time_verify) / m_chainman.num_blocks_total);
 
     if (fJustCheck) {
-        return true;
+        return state;
     }
 
     m_blockman.WriteBlockUndo(blockundo, *pindex);
@@ -2678,7 +2679,7 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         Ticks<std::chrono::nanoseconds>(time_5 - time_start)
     );
 
-    return true;
+    return state;
 }
 
 CoinsCacheSizeState Chainstate::GetCoinsCacheSizeState()
@@ -3050,13 +3051,12 @@ bool Chainstate::ConnectTip(
     {
         CoinsViewOverlay& view{*m_coins_views->m_connect_block_view};
         const auto reset_guard{view.StartFetching(*block_to_connect)};
-        bool rv = ConnectBlock(*block_to_connect, state, pindexNew, view);
+        state = ConnectBlock(*block_to_connect, pindexNew, view);
         if (m_chainman.m_options.signals) {
             m_chainman.m_options.signals->BlockChecked(block_to_connect, state);
         }
-        if (!rv) {
-            if (state.IsInvalid())
-                InvalidBlockFound(pindexNew, state);
+        if (!state.IsValid()) {
+            InvalidBlockFound(pindexNew, state);
             LogError("%s: ConnectBlock %s failed, %s\n", __func__, pindexNew->GetBlockHash().ToString(), state.ToString());
             return false;
         }
@@ -4544,16 +4544,11 @@ BlockValidationState TestBlockValidity(
     index_dummy.phashBlock = &block_hash;
     CCoinsViewCache view_dummy(&chainstate.CoinsTip());
 
-    // Set fJustCheck to true in order to update, and not clear, validation caches.
-    if(!chainstate.ConnectBlock(block, state, &index_dummy, view_dummy, /*fJustCheck=*/true)) {
-        if (state.IsValid()) NONFATAL_UNREACHABLE();
-        return state;
-    }
-
-    // Ensure no check returned successfully while also setting an invalid state.
+    // Ensure no preceding check returned successfully while setting an invalid state.
     if (!state.IsValid()) NONFATAL_UNREACHABLE();
 
-    return state;
+    // Set fJustCheck to true in order to update, and not clear, validation caches.
+    return chainstate.ConnectBlock(block, &index_dummy, view_dummy, /*fJustCheck=*/true);
 }
 
 /* This function is called from the RPC code for pruneblockchain */
@@ -4752,7 +4747,15 @@ VerifyDBResult CVerifyDB::VerifyDB(
                 LogError("Verification error: ReadBlock failed at %d, hash=%s", pindex->nHeight, pindex->GetBlockHash().ToString());
                 return VerifyDBResult::CORRUPTED_BLOCK_DB;
             }
-            if (!chainstate.ConnectBlock(block, state, pindex, coins)) {
+            try {
+                state = chainstate.ConnectBlock(block, pindex, coins);
+            } catch (const kernel::FatalError& e) {
+                // A corrupted block database is reported to the caller,
+                // which suggests how to recover from it.
+                LogError("Verification error: failed to connect block at %d, hash=%s (%s)", pindex->nHeight, pindex->GetBlockHash().ToString(), e.what());
+                return VerifyDBResult::CORRUPTED_BLOCK_DB;
+            }
+            if (!state.IsValid()) {
                 LogError("Verification error: found unconnectable block at %d, hash=%s (%s)", pindex->nHeight, pindex->GetBlockHash().ToString(), state.ToString());
                 return VerifyDBResult::CORRUPTED_BLOCK_DB;
             }
