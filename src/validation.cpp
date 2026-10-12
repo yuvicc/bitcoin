@@ -2632,9 +2632,7 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         return true;
     }
 
-    if (!m_blockman.WriteBlockUndo(blockundo, state, *pindex)) {
-        return false;
-    }
+    m_blockman.WriteBlockUndo(blockundo, *pindex);
 
     const auto time_5{SteadyClock::now()};
     m_chainman.time_undo += time_5 - time_4;
@@ -4393,10 +4391,6 @@ bool ChainstateManager::AcceptBlock(const std::shared_ptr<const CBlock>& pblock,
             m_blockman.UpdateBlockInfo(block, pindex->nHeight, blockPos);
         } else {
             blockPos = m_blockman.WriteBlock(block, pindex->nHeight);
-            if (blockPos.IsNull()) {
-                state.Error(strprintf("%s: Failed to find position to write new block to disk", __func__));
-                return false;
-            }
         }
         ReceivedBlockTransactions(block, pindex, blockPos);
     } catch (const std::runtime_error& e) {
@@ -4972,10 +4966,6 @@ bool ChainstateManager::LoadGenesisBlock()
 
     try {
         FlatFilePos blockPos{m_blockman.WriteBlock(genesis_block, 0)};
-        if (blockPos.IsNull()) {
-            LogError("Writing genesis block to disk failed");
-            return false;
-        }
         CBlockIndex* pindex{m_blockman.AddToBlockIndex(genesis_block, m_best_header)};
         ReceivedBlockTransactions(genesis_block, pindex, blockPos);
     } catch (const std::runtime_error& e) {

@@ -42,7 +42,6 @@
 #include <utility>
 #include <vector>
 
-class BlockValidationState;
 class CBlockUndo;
 class Chainstate;
 class ChainstateManager;
@@ -220,10 +219,13 @@ private:
      *
      * The nAddSize argument passed to this function should include not just the size of the serialized CBlock, but also the size of
      * separator fields (STORAGE_HEADER_BYTES).
+     *
+     * @throws kernel::FatalError if there is not enough disk space.
      */
     [[nodiscard]] FlatFilePos FindNextBlockPos(unsigned int nAddSize, unsigned int nHeight, uint64_t nTime) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     [[nodiscard]] bool FlushChainstateBlockFile(int tip_height) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
-    [[nodiscard]] bool FindUndoPos(BlockValidationState& state, int nFile, FlatFilePos& pos, unsigned int nAddSize) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    /** @throws kernel::FatalError if there is not enough disk space. */
+    [[nodiscard]] FlatFilePos FindUndoPos(int nFile, unsigned int nAddSize) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     AutoFile OpenUndoFile(const FlatFilePos& pos, bool fReadOnly = false) const;
 
@@ -380,7 +382,11 @@ public:
     /** Get block file info entry for one block file */
     CBlockFileInfo* GetBlockFileInfo(size_t n) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
-    bool WriteBlockUndo(const CBlockUndo& blockundo, BlockValidationState& state, CBlockIndex& block)
+    /** Store the undo data of a block on disk, if not already stored.
+     *
+     * @throws kernel::FatalError if the undo data could not be written.
+     */
+    void WriteBlockUndo(const CBlockUndo& blockundo, CBlockIndex& block)
         EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     /** Store block on disk and update block file statistics.
@@ -388,10 +394,10 @@ public:
      * @param[in]  block        the block to be stored
      * @param[in]  nHeight      the height of the block
      *
-     * @returns in case of success, the position to which the block was written to
-     *          in case of an error, an empty FlatFilePos
+     * @returns the position to which the block was written to
+     * @throws kernel::FatalError if the block could not be written.
      */
-    FlatFilePos WriteBlock(const CBlock& block, int nHeight) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    [[nodiscard]] FlatFilePos WriteBlock(const CBlock& block, int nHeight) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     /** Update blockfile info while processing a block during reindex. The block must be available on disk.
      *
