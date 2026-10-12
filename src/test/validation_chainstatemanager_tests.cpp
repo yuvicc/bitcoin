@@ -87,8 +87,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager, TestChain100Setup)
             cs->PopulateBlockIndexCandidates();
         }
     }
-    BlockValidationState _;
-    BOOST_CHECK(c2.ActivateBestChain(_, nullptr));
+    BOOST_CHECK(c2.ActivateBestChain(nullptr));
 
     BOOST_CHECK_EQUAL(WITH_LOCK(::cs_main, return *manager.CurrentChainstate().m_from_snapshot_blockhash), snapshot_blockhash);
     BOOST_CHECK(WITH_LOCK(::cs_main, return manager.CurrentChainstate().m_assumeutxo == Assumeutxo::UNVALIDATED));
@@ -676,7 +675,7 @@ BOOST_FIXTURE_TEST_CASE(invalidate_block_and_reconsider_fork, TestChain100Setup)
         chainstate.ResetBlockFailureFlags(block99);
         chainman.RecalculateBestHeader();
     }
-    chainstate.ActivateBestChain(state);
+    chainstate.ActivateBestChain();
     BOOST_REQUIRE(WITH_LOCK(cs_main, return chainman.ActiveChain().Tip()) == block100);
 
     {
@@ -708,7 +707,7 @@ BOOST_FIXTURE_TEST_CASE(invalidate_block_and_reconsider_fork, TestChain100Setup)
         chainstate.ResetBlockFailureFlags(block99);
         chainman.RecalculateBestHeader();
     }
-    chainstate.ActivateBestChain(state);
+    chainstate.ActivateBestChain();
     {
         LOCK(chainman.GetMutex());
         BOOST_CHECK(!(block98->nStatus & BLOCK_FAILED_VALID));

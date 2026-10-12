@@ -1768,7 +1768,7 @@ void InvalidateBlock(ChainstateManager& chainman, const uint256 block_hash) {
         chainman.ActiveChainstate().InvalidateBlock(state, pblockindex);
 
         if (state.IsValid()) {
-            chainman.ActiveChainstate().ActivateBestChain(state);
+            chainman.ActiveChainstate().ActivateBestChain();
         }
     } catch (const kernel::FatalError& e) {
         throw JSONRPCError(RPC_DATABASE_ERROR, e.what());
@@ -1816,15 +1816,10 @@ void ReconsiderBlock(ChainstateManager& chainman, uint256 block_hash) {
         chainman.RecalculateBestHeader();
     }
 
-    BlockValidationState state;
     try {
-        chainman.ActiveChainstate().ActivateBestChain(state);
+        chainman.ActiveChainstate().ActivateBestChain();
     } catch (const kernel::FatalError& e) {
         throw JSONRPCError(RPC_DATABASE_ERROR, e.what());
-    }
-
-    if (!state.IsValid()) {
-        throw JSONRPCError(RPC_DATABASE_ERROR, state.ToString());
     }
 }
 

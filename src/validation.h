@@ -774,10 +774,10 @@ public:
      * the UTXO set to verify the assumeutxo value the snapshot was activated
      * with. `cs_main` will be held during this time.
      *
-     * @returns true unless a system error occurred
+     * @returns false if this chainstate is not in operation
+     * @throws kernel::FatalError if a system error occurred
      */
     bool ActivateBestChain(
-        BlockValidationState& state,
         std::shared_ptr<const CBlock> pblock = nullptr)
         EXCLUSIVE_LOCKS_REQUIRED(!m_chainstate_mutex)
         LOCKS_EXCLUDED(::cs_main);
