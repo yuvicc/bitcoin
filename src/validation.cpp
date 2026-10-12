@@ -2945,7 +2945,7 @@ void Chainstate::UpdateTip(const CBlockIndex* pindexNew)
   * disconnectpool (note that the caller is responsible for mempool consistency
   * in any case).
   */
-bool Chainstate::DisconnectTip(BlockValidationState& state, DisconnectedBlockTransactions* disconnectpool)
+bool Chainstate::DisconnectTip(DisconnectedBlockTransactions* disconnectpool)
 {
     AssertLockHeld(cs_main);
     if (m_mempool) AssertLockHeld(m_mempool->cs);
@@ -3018,9 +3018,11 @@ struct ConnectedBlock {
  * corresponding to pindexNew, to bypass loading it again from disk.
  *
  * The block is added to connected_blocks if connection succeeds.
+ *
+ * @returns the validation state of the block
+ * @throws kernel::FatalError if a system error occurred
  */
-bool Chainstate::ConnectTip(
-    BlockValidationState& state,
+BlockValidationState Chainstate::ConnectTip(
     CBlockIndex* pindexNew,
     std::shared_ptr<const CBlock> block_to_connect,
     std::vector<ConnectedBlock>& connected_blocks,
@@ -3028,6 +3030,7 @@ bool Chainstate::ConnectTip(
 {
     AssertLockHeld(cs_main);
     if (m_mempool) AssertLockHeld(m_mempool->cs);
+    BlockValidationState state;
 
     assert(pindexNew->pprev == m_chain.Tip());
     // Read block from disk.
@@ -3035,7 +3038,7 @@ bool Chainstate::ConnectTip(
     if (!block_to_connect) {
         std::shared_ptr<CBlock> pblockNew = std::make_shared<CBlock>();
         if (!m_blockman.ReadBlock(*pblockNew, *pindexNew)) {
-            return FatalError(m_chainman.GetNotifications(), state, _("Failed to read block."));
+            kernel::FatalError::Raise(m_chainman.GetNotifications(), _("Failed to read block."));
         }
         block_to_connect = std::move(pblockNew);
     } else {
@@ -3058,7 +3061,7 @@ bool Chainstate::ConnectTip(
         if (!state.IsValid()) {
             InvalidBlockFound(pindexNew, state);
             LogError("%s: ConnectBlock %s failed, %s\n", __func__, pindexNew->GetBlockHash().ToString(), state.ToString());
-            return false;
+            return state;
         }
         time_3 = SteadyClock::now();
         m_chainman.time_connect_total += time_3 - time_2;
@@ -3123,7 +3126,7 @@ bool Chainstate::ConnectTip(
     m_chainman.MaybeValidateSnapshot(*this, current_cs);
 
     connected_blocks.emplace_back(pindexNew, std::move(block_to_connect));
-    return true;
+    return state;
 }
 
 /**
@@ -3201,9 +3204,9 @@ void Chainstate::PruneBlockIndexCandidates() {
  * Try to make some progress towards making index_most_work the active block.
  * pblock is either nullptr or a pointer to a CBlock corresponding to index_most_work.
  *
- * @returns true unless a system error occurred
+ * @throws kernel::FatalError if a system error occurred
  */
-bool Chainstate::ActivateBestChainStep(BlockValidationState& state, CBlockIndex& index_most_work, const std::shared_ptr<const CBlock>& pblock, bool& fInvalidFound, std::vector<ConnectedBlock>& connected_blocks)
+void Chainstate::ActivateBestChainStep(CBlockIndex& index_most_work, const std::shared_ptr<const CBlock>& pblock, bool& fInvalidFound, std::vector<ConnectedBlock>& connected_blocks)
 {
     AssertLockHeld(cs_main);
     if (m_mempool) AssertLockHeld(m_mempool->cs);
@@ -3216,16 +3219,11 @@ bool Chainstate::ActivateBestChainStep(BlockValidationState& state, CBlockIndex&
     DisconnectedBlockTransactions disconnectpool{MAX_DISCONNECTED_TX_POOL_BYTES};
     try {
     while (m_chain.Tip() && m_chain.Tip() != pindexFork) {
-        if (!DisconnectTip(state, &disconnectpool)) {
-            // This is likely a fatal error, but keep the mempool consistent,
-            // just in case. Only remove from the mempool in this case.
-            MaybeUpdateMempoolForReorg(disconnectpool, false);
-
+        if (!DisconnectTip(&disconnectpool)) {
             // If we're unable to disconnect a block during normal operation,
             // then that is a failure of our local system -- we should abort
             // rather than stay on a less work chain.
-            FatalError(m_chainman.GetNotifications(), state, _("Failed to disconnect block."));
-            return false;
+            kernel::FatalError::Raise(m_chainman.GetNotifications(), _("Failed to disconnect block."));
         }
         fBlocksDisconnected = true;
     }
@@ -3249,37 +3247,29 @@ bool Chainstate::ActivateBestChainStep(BlockValidationState& state, CBlockIndex&
 
         // Connect new blocks.
         for (CBlockIndex* pindexConnect : vpindexToConnect | std::views::reverse) {
-            if (!ConnectTip(state, pindexConnect, pindexConnect == &index_most_work ? pblock : std::shared_ptr<const CBlock>(), connected_blocks, disconnectpool)) {
-                if (state.IsInvalid()) {
-                    // The block violates a consensus rule.
-                    if (state.GetResult() != BlockValidationResult::BLOCK_MUTATED) {
-                        InvalidChainFound(vpindexToConnect.front());
-                    }
-                    state = BlockValidationState();
-                    fInvalidFound = true;
-                    fContinue = false;
-                    break;
-                } else {
-                    // A system error occurred (disk space, database error, ...).
-                    // Make the mempool consistent with the current tip, just in case
-                    // any observers try to use it before shutdown.
-                    MaybeUpdateMempoolForReorg(disconnectpool, false);
-                    return false;
+            const BlockValidationState state{ConnectTip(pindexConnect, pindexConnect == &index_most_work ? pblock : std::shared_ptr<const CBlock>(), connected_blocks, disconnectpool)};
+            if (state.IsInvalid()) {
+                // The block violates a consensus rule.
+                if (state.GetResult() != BlockValidationResult::BLOCK_MUTATED) {
+                    InvalidChainFound(vpindexToConnect.front());
                 }
-            } else {
-                PruneBlockIndexCandidates();
-                if (!pindexOldTip || m_chain.Tip()->nChainWork > pindexOldTip->nChainWork) {
-                    // We're in a better position than we were. Return temporarily to release the lock.
-                    fContinue = false;
-                    break;
-                }
+                fInvalidFound = true;
+                fContinue = false;
+                break;
+            }
+            PruneBlockIndexCandidates();
+            if (!pindexOldTip || m_chain.Tip()->nChainWork > pindexOldTip->nChainWork) {
+                // We're in a better position than we were. Return temporarily to release the lock.
+                fContinue = false;
+                break;
             }
         }
     }
     } catch (const kernel::FatalError&) {
         // A system error occurred (disk space, database error, ...).
         // Make the mempool consistent with the current tip, just in case
-        // any observers try to use it before shutdown.
+        // any observers try to use it before shutdown. Only remove from the
+        // mempool in this case.
         MaybeUpdateMempoolForReorg(disconnectpool, false);
         throw;
     }
@@ -3292,8 +3282,6 @@ bool Chainstate::ActivateBestChainStep(BlockValidationState& state, CBlockIndex&
     if (m_mempool) m_mempool->check(this->CoinsTip(), this->m_chain.Height() + 1);
 
     CheckForkWarningConditions();
-
-    return true;
 }
 
 static SynchronizationState GetSynchronizationState(bool init, bool blockfiles_indexed)
@@ -3406,10 +3394,7 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                 // in case snapshot validation is completed during ActivateBestChainStep, the
                 // result of GetRole() changes from BACKGROUND to NORMAL.
                const ChainstateRole chainstate_role{this->GetRole()};
-                if (!ActivateBestChainStep(state, *pindexMostWork, pblock && pblock->GetHash() == pindexMostWork->GetBlockHash() ? pblock : nullBlockPtr, fInvalidFound, connected_blocks)) {
-                    // A system error occurred
-                    return false;
-                }
+                ActivateBestChainStep(*pindexMostWork, pblock && pblock->GetHash() == pindexMostWork->GetBlockHash() ? pblock : nullBlockPtr, fInvalidFound, connected_blocks);
                 blocks_connected = true;
 
                 if (fInvalidFound) {
@@ -3603,7 +3588,7 @@ bool Chainstate::InvalidateBlock(BlockValidationState& state, CBlockIndex* const
         DisconnectedBlockTransactions disconnectpool{MAX_DISCONNECTED_TX_POOL_BYTES};
         bool ret;
         try {
-            ret = DisconnectTip(state, &disconnectpool);
+            ret = DisconnectTip(&disconnectpool);
         } catch (const kernel::FatalError&) {
             MaybeUpdateMempoolForReorg(disconnectpool, /*fAddToMempool=*/false);
             throw;
